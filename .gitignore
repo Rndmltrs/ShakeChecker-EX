@@ -34,3 +34,4 @@ Desktop.ini
 
 # Local artifacts
 *.log
+fixtures/_debug_crops/

@@ -1,0 +1,184 @@
+{
+  "_meta": {
+    "description": "Ground truth for the fixture screenshots in this directory. HP percentages were measured manually and pixel-exactly (fill-run width on the bar's middle row / 218 px total inner bar width, see scripts/measure_fill.py); they are independent of the production reader. Tests must compare HP with the tolerance below.",
+    "hp_tolerance_pct": 3.0,
+    "bar_inner_width_px": 218,
+    "bar_note": "The PokeMMO battle UI is rendered at a fixed pixel size: the enemy HP bar's inner width is 218 px in every fixture, including 1920x1080_resolution.png. The empty part of the bar is white with a diagonal crosshatch pattern, not dark.",
+    "location_note": "location is the HUD text top-left without the ' Ch. N' channel suffix.",
+    "scenes": ["overworld", "wild_single", "wild_double", "trainer"],
+    "statuses": ["none", "slp", "par", "psn", "brn", "frz"],
+    "status_badge_note": "Status badge sits left of the enemy name: SLP = gray 'Z', PAR = yellow lightning, PSN = purple skull (from full_health_trainer_battle_poisoned.png). BRN/FRZ have no fixture yet.",
+    "stat_stage_note": "Some fixtures show an orange stat-stage box (e.g. '-1 Atk', '-2 Eva') to the right of the enemy HP bar. It is game UI for stat changes and must not disturb HP/status reading."
+  },
+  "fixtures": {
+    "full_health_no_status.png": {
+      "scene": "wild_single",
+      "location": "Eterna Forest",
+      "overlay_visible": true,
+      "enemies": [
+        { "name": "Cascoon", "level": 11, "hp_pct": 100.0, "hp_color": "green", "status": "none" }
+      ]
+    },
+    "full_health_sleeping.png": {
+      "scene": "wild_single",
+      "location": "Eterna Forest",
+      "overlay_visible": true,
+      "enemies": [
+        { "name": "Cascoon", "level": 11, "hp_pct": 100.0, "hp_color": "green", "status": "slp" }
+      ],
+      "notes": "Game window is smaller than in the other Eterna fixtures; Windows taskbar visible at the bottom."
+    },
+    "full_health_paralyzed.png": {
+      "scene": "wild_single",
+      "location": "Eterna Forest",
+      "overlay_visible": true,
+      "enemies": [
+        { "name": "Cascoon", "level": 11, "hp_pct": 100.0, "hp_color": "green", "status": "par" }
+      ]
+    },
+    "full_health_water.png": {
+      "scene": "wild_single",
+      "location": "Route 41",
+      "overlay_visible": true,
+      "enemies": [
+        { "name": "Mantine", "level": 22, "hp_pct": 100.0, "hp_color": "green", "status": "none" }
+      ],
+      "notes": "Water battle; 'IronPixxelX sent out Smeargle!' textbox visible."
+    },
+    "two_third_green_health_cave.png": {
+      "scene": "wild_single",
+      "location": "Victory Road",
+      "overlay_visible": true,
+      "enemies": [
+        { "name": "Onix", "level": 43, "hp_pct": 65.1, "hp_color": "green", "status": "none" }
+      ],
+      "notes": "Move-selection submenu open; sandstorm haze over the scene."
+    },
+    "two_third_green_health_sleeping_cave.png": {
+      "scene": "wild_single",
+      "location": "Victory Road",
+      "overlay_visible": true,
+      "enemies": [
+        { "name": "Onix", "level": 43, "hp_pct": 65.1, "hp_color": "green", "status": "slp" }
+      ],
+      "notes": "'The sandstorm rages' textbox visible."
+    },
+    "yellow_health_no_status_cave.png": {
+      "scene": "wild_single",
+      "location": "Victory Road",
+      "overlay_visible": true,
+      "enemies": [
+        { "name": "Onix", "level": 43, "hp_pct": 41.7, "hp_color": "yellow", "status": "none" }
+      ],
+      "notes": "Orange '-2 Eva' stat-stage box right of the HP bar."
+    },
+    "yellow_health_sleeping_cave.png": {
+      "scene": "wild_single",
+      "location": "Victory Road",
+      "overlay_visible": true,
+      "enemies": [
+        { "name": "Onix", "level": 43, "hp_pct": 47.2, "hp_color": "yellow", "status": "slp" }
+      ]
+    },
+    "red_health_no_status_cave.png": {
+      "scene": "wild_single",
+      "location": "Victory Road",
+      "overlay_visible": true,
+      "enemies": [
+        { "name": "Onix", "level": 43, "hp_pct": 4.6, "hp_color": "red", "status": "none" }
+      ],
+      "notes": "Orange stat-stage box right of the HP bar."
+    },
+    "red_health_sleeping_cave.png": {
+      "scene": "wild_single",
+      "location": "Victory Road",
+      "overlay_visible": true,
+      "enemies": [
+        { "name": "Onix", "level": 43, "hp_pct": 4.6, "hp_color": "red", "status": "slp" }
+      ]
+    },
+    "1_HP_red_health_no_status_cave.png": {
+      "scene": "wild_single",
+      "location": "Victory Road",
+      "overlay_visible": true,
+      "enemies": [
+        { "name": "Ursaring", "level": 40, "hp_pct": 1.0, "hp_color": "red", "status": "none" }
+      ],
+      "notes": "Exactly 1 HP; fill is a 2-3 px sliver. Reader must report a value > 0."
+    },
+    "1_HP_red_health_sleeping_cave.png": {
+      "scene": "wild_single",
+      "location": "Victory Road",
+      "overlay_visible": true,
+      "enemies": [
+        { "name": "Ursaring", "level": 40, "hp_pct": 1.0, "hp_color": "red", "status": "slp" }
+      ],
+      "notes": "Exactly 1 HP; fill is a 2-3 px sliver. Reader must report a value > 0."
+    },
+    "red_health_paralyzed.png": {
+      "scene": "wild_double",
+      "location": "Route 205",
+      "overlay_visible": false,
+      "enemies": [
+        { "name": "Cherubi", "level": 17, "hp_pct": 11.5, "hp_color": "red", "status": "par" }
+      ],
+      "notes": "Double battle with one enemy already fainted: one enemy bar left, but two ally bars (Rotom, Staravia) visible. v1 ignores double battles."
+    },
+    "double_battle_no_status.png": {
+      "scene": "wild_double",
+      "location": "Route 205",
+      "overlay_visible": false,
+      "enemies": [
+        { "name": "Combee", "level": 16, "hp_pct": 100.0, "hp_color": "green", "status": "none" },
+        { "name": "Cherubi", "level": 17, "hp_pct": 100.0, "hp_color": "green", "status": "none" }
+      ],
+      "notes": "Two stacked enemy bars; orange '-1 Atk' stat-stage box next to each."
+    },
+    "full_health_trainer_battle_no_status.png": {
+      "scene": "trainer",
+      "location": "Route 205",
+      "overlay_visible": false,
+      "enemies": [
+        { "name": "Ponyta", "level": 14, "hp_pct": 100.0, "hp_color": "green", "status": "none" }
+      ]
+    },
+    "full_health_trainer_battle_poisoned.png": {
+      "scene": "trainer",
+      "location": "Route 205",
+      "overlay_visible": false,
+      "enemies": [
+        { "name": "Pachirisu", "level": 12, "hp_pct": 100.0, "hp_color": "green", "status": "psn" }
+      ],
+      "notes": "Enemy poisoned at full HP (purple skull badge). Own Roserade also has a status badge."
+    },
+    "overworld_city_biking.png": {
+      "scene": "overworld",
+      "location": "Floaroma Town",
+      "overlay_visible": false,
+      "enemies": [],
+      "notes": "Player on bike."
+    },
+    "overworld_city_running.png": {
+      "scene": "overworld",
+      "location": "Floaroma Town",
+      "overlay_visible": false,
+      "enemies": []
+    },
+    "overworld_wild_running.png": {
+      "scene": "overworld",
+      "location": "Route 205",
+      "overlay_visible": false,
+      "enemies": [],
+      "notes": "On a route with wild grass nearby; still no battle UI."
+    },
+    "1920x1080_resolution.png": {
+      "scene": "wild_single",
+      "location": "Route 41",
+      "overlay_visible": true,
+      "enemies": [
+        { "name": "Tentacool", "level": 24, "hp_pct": 100.0, "hp_color": "green", "status": "none" }
+      ],
+      "notes": "1920x1080 client resolution; battle UI elements keep their fixed pixel size (bar still 218 px)."
+    }
+  }
+}
