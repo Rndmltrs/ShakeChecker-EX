@@ -1,0 +1,68 @@
+# All CV calibration values live here (CLAUDE.md convention: every magic
+# number names the fixture that justifies it). Loaded by battle_reader.py.
+
+[hp_bar]
+# Inner width of the enemy HP bar in px. The battle UI renders at a fixed
+# pixel size regardless of window size/resolution: full_health_*.png and
+# 1920x1080_resolution.png all measure exactly 218 px (scripts/measure_fill.py).
+inner_width_px = 218
+# Accept fill+empty totals within this tolerance of inner_width_px
+# (anti-aliasing eats 1-2 px on each edge in two_third_green_health_cave.png).
+width_tolerance_px = 8
+# A fill run at least this wide counts as a (near-)full bar without needing
+# the empty-part check (full_health_*.png: run == 218).
+full_fill_min_px = 206
+
+# Search region for enemy HP bars, relative to the captured frame.
+# Enemy bars sit top-left: y=200/1432=0.14, x=345/1996=0.17 in the Eterna and
+# cave fixtures; y=184/1077=0.17 in 1920x1080_resolution.png. Ally bars sit at
+# x>=0.70 (full_health_water.png) and stay outside search_right; scenery false
+# positives below 0.30 height (yellow_health_sleeping_cave.png) are excluded.
+search_top = 0.0
+search_bottom = 0.30
+search_left = 0.05
+search_right = 0.50
+
+# Fill blob geometry: bar fill is 3-6 px tall in all fixtures (10x6 px in
+# red_health_no_status_cave.png); window-toolbar icons, status badges and
+# stat-stage boxes are >= 10 px tall and get rejected by max height.
+min_fill_height_px = 3
+max_fill_height_px = 8
+min_fill_width_px = 2
+
+# Two stacked enemy bars are 46 px apart (double_battle_no_status.png);
+# detections closer than this in y are merged as one bar.
+merge_y_px = 10
+
+[hp_bar.hsv]
+# OpenCV HSV (H 0-179). Saturation/value floors separate the bar fill from
+# the white crosshatch and the dark frame in all *_health_* fixtures.
+sat_min = 80
+val_min = 80
+green_h = [40, 75]
+yellow_h = [20, 39]
+red_h_low = [0, 10]
+red_h_high = [170, 179]
+
+[hp_bar.frame]
+# The bar inner area is enclosed by a thin, perfectly uniform gray outline
+# spanning the full 218 px directly above and below the fill
+# (red_health_no_status_cave.png: V mean 108.8, V std 8.5, S 0 at y=197/204).
+# The pokeball dex icon next to the name has no such line (V std 11-26,
+# S mean ~50 in sandstorm haze) and is rejected by this check.
+sat_mean_max = 25
+val_std_max = 25
+val_mean_min = 60
+val_mean_max = 170
+# how many rows above/below the fill blob to search for the outline row
+search_px = 4
+
+[hp_bar.empty]
+# The empty bar part is a white diagonal crosshatch (red_health_no_status_cave.png),
+# not dark: light pixels with low saturation.
+val_min = 170
+sat_max = 60
+# Fraction of light pixels required between fill end and bar right edge.
+# Crosshatch lattice lines dip below val_min, hence < 1.0
+# (1_HP_red_health_no_status_cave.png has the longest empty stretch).
+min_light_ratio = 0.70
