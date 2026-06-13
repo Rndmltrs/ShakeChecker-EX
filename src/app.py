@@ -241,8 +241,15 @@ def run(species_override: dict | None, status_override: str | None, cal: Calibra
         frame = capture.grab(rect)
         now = time.monotonic()
 
-        # Battle membership follows the battle overlay, not the HP bar.
-        if is_battle_ui_present(frame, cal.battle_ui):
+        reading = read_battle(frame, cal)
+        has_bar = reading.state in (BattleState.SINGLE, BattleState.MULTI)
+        # Enter a battle only when an enemy HP bar is actually detected (the
+        # login screen / menus have a dark bottom panel too, so the panel alone
+        # is not enough). Once in battle, the panel keeps us in through intro and
+        # attack animations when the bar momentarily vanishes.
+        panel = is_battle_ui_present(frame, cal.battle_ui)
+
+        if has_bar or (state is AppState.BATTLE and panel):
             last_seen_battle = now
             if state is not AppState.BATTLE:
                 state = AppState.BATTLE
@@ -252,7 +259,6 @@ def run(species_override: dict | None, status_override: str | None, cal: Calibra
                 last_chat_ocr = 0.0
                 print("battle detected")
 
-            reading = read_battle(frame, cal)
             if reading.state is BattleState.SINGLE:
                 bar = reading.bars[0]
                 status = status_override or bar.status.value
