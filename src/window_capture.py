@@ -15,6 +15,68 @@ import win32gui
 
 WINDOW_TITLE = "PokeMMO"
 
+# The PokeMMO client presents a window title built from Cyrillic/Greek
+# homoglyphs (observed: 'РokеMМO' with Cyrillic Р U+0420, е U+0435, М U+041C)
+# that looks like "PokeMMO" but is not ASCII, so a naive title match fails.
+# Fold the common confusable letters back to ASCII before comparing.
+_CONFUSABLES = {
+    # Cyrillic -> Latin
+    "А": "A",
+    "В": "B",
+    "Е": "E",
+    "Ѕ": "S",
+    "І": "I",
+    "Ј": "J",
+    "К": "K",
+    "М": "M",
+    "Н": "H",
+    "О": "O",
+    "Р": "P",
+    "С": "C",
+    "Т": "T",
+    "Х": "X",
+    "а": "a",
+    "е": "e",
+    "о": "o",
+    "р": "p",
+    "с": "c",
+    "у": "y",
+    "х": "x",
+    "к": "k",
+    "ѕ": "s",
+    "і": "i",
+    "ј": "j",
+    # Greek -> Latin
+    "Α": "A",
+    "Β": "B",
+    "Ε": "E",
+    "Η": "H",
+    "Ι": "I",
+    "Κ": "K",
+    "Μ": "M",
+    "Ν": "N",
+    "Ο": "O",
+    "Ρ": "P",
+    "Τ": "T",
+    "Υ": "Y",
+    "Χ": "X",
+    "Ζ": "Z",
+    "ο": "o",
+    "ρ": "p",
+    "τ": "t",
+}
+_FOLD = str.maketrans(_CONFUSABLES)
+
+
+def fold_confusables(text: str) -> str:
+    """Map common Cyrillic/Greek homoglyphs to their ASCII lookalikes."""
+    return text.translate(_FOLD)
+
+
+def title_matches(title: str) -> bool:
+    """True if `title` is the PokeMMO window title, tolerant of homoglyphs."""
+    return fold_confusables(title).lower().startswith(WINDOW_TITLE.lower())
+
 
 def set_dpi_awareness() -> None:
     """Must run at startup before any coordinate work (CLAUDE.md hard rule)."""
@@ -52,13 +114,13 @@ def iter_visible_windows() -> list[tuple[int, str]]:
 
 
 def find_pokemmo_hwnd() -> int | None:
-    """Visible window whose title starts with 'PokeMMO'. If several match,
-    pick the one with the largest client area (the real game window, not a
-    zero-sized helper/tooltip with the same title prefix)."""
+    """Visible window whose (homoglyph-folded) title starts with 'PokeMMO'.
+    If several match, pick the one with the largest client area (the real game
+    window, not a zero-sized helper/tooltip with the same title prefix)."""
     best: int | None = None
     best_area = -1
     for hwnd, title in iter_visible_windows():
-        if not title.startswith(WINDOW_TITLE):
+        if not title_matches(title):
             continue
         rect = get_client_rect(hwnd)
         area = rect.width * rect.height if rect else 0

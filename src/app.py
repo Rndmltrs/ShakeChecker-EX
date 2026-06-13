@@ -25,10 +25,12 @@ from window_capture import (
     WINDOW_TITLE,
     WindowCapture,
     find_pokemmo_hwnd,
+    fold_confusables,
     get_client_rect,
     is_window_alive,
     iter_visible_windows,
     set_dpi_awareness,
+    title_matches,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -116,7 +118,7 @@ def list_windows() -> None:
         f"{WINDOW_TITLE!r}):\n"
     )
     for hwnd, title in windows:
-        is_match = title.startswith(WINDOW_TITLE)
+        is_match = title_matches(title)
         rect = get_client_rect(hwnd)
         size = (
             f"{rect.width}x{rect.height} @ ({rect.left},{rect.top})" if rect else "no client rect"
@@ -125,6 +127,11 @@ def list_windows() -> None:
         if is_match:
             matches += 1
         print(f"  hwnd={hwnd:>10}  {size:28s}  {title!r}{mark}")
+        folded = fold_confusables(title)
+        if is_match and folded != title:
+            cps = " ".join(f"U+{ord(c):04X}" for c in title)
+            print(f"             title uses non-ASCII homoglyphs; folds to {folded!r}")
+            print(f"             codepoints: [{cps}]")
     picked = find_pokemmo_hwnd()
     print(f"\n{matches} title match(es). find_pokemmo_hwnd() -> {picked}")
     if picked is not None:

@@ -84,6 +84,15 @@
     "imread",
     "imwrite",
     "shcore",
-    "BGRA"
+    "BGRA",
+    "confusables",
+    "homoglyph",
+    "homoglyphs",
+    "codepoint",
+    "codepoints",
+    "maketrans",
+    "rects",
+    "Fangwahrscheinlichkeit",
+    "Рokе"
   ]
 }
