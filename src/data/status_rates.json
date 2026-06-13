@@ -1,0 +1,11 @@
+{
+  "_note": "Status catch multipliers. SLP/FRZ x2, PAR x1.5 from the PokeMMO Hub source. PSN/BRN are absent from the Hub list but apply the Gen 3/4 minor-status bonus x1.5 (confirmed in-game for poison); kept here so they are not silently x1.",
+  "rates": {
+    "none": 1.0,
+    "slp": 2.0,
+    "frz": 2.0,
+    "par": 1.5,
+    "psn": 1.5,
+    "brn": 1.5
+  }
+}

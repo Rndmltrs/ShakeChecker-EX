@@ -1,0 +1,17 @@
+{
+  "_note": "PokeMMO ball multipliers, flat values ported 1:1 from PokeMMO Hub (src/hooks/useCatchRate.jsx). Conditional logic (Timer turn scaling, Quick turn-1, Net type bonus) is intentionally absent until verified in-game — see 'Open question' in CLAUDE.md.",
+  "balls": [
+    { "id": "poke", "name": "Poké Ball", "rate": 1.0 },
+    { "id": "great", "name": "Great Ball", "rate": 1.5 },
+    { "id": "ultra", "name": "Ultra Ball", "rate": 2.0 },
+    { "id": "heal", "name": "Heal Ball", "rate": 1.25 },
+    { "id": "luxury", "name": "Luxury Ball", "rate": 2.0 },
+    { "id": "net", "name": "Net Ball", "rate": 3.5 },
+    { "id": "nest", "name": "Nest Ball", "rate": 4.0 },
+    { "id": "dusk", "name": "Dusk Ball", "rate": 2.5 },
+    { "id": "quick", "name": "Quick Ball", "rate": 5.0 },
+    { "id": "timer", "name": "Timer Ball", "rate": 4.0 },
+    { "id": "repeat", "name": "Repeat Ball", "rate": 2.5 },
+    { "id": "dream", "name": "Dream Ball", "rate": 4.0 }
+  ]
+}

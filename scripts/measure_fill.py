@@ -7,9 +7,6 @@ verified from the full-health bars). Fill %% = run width / 218.
 from __future__ import annotations
 
 import sys
-from pathlib import Path
-
-import colorsys
 
 import cv2
 import numpy as np
@@ -55,7 +52,7 @@ def main() -> None:
         if png.name.startswith("overworld"):
             continue
         img = cv2.imread(str(png))
-        for y0, y1, bx0, bx1 in find_bar_rows(img):
+        for y0, y1, bx0, _bx1 in find_bar_rows(img):
             y_mid = (y0 + y1) // 2
             r = fill_run(img, y_mid, bx0)
             if r is None:

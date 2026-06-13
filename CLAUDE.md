@@ -22,7 +22,7 @@ Passive screen-reading overlay for PokeMMO (Windows). Named after the shake chec
 
 ## Architecture
 
-```
+```text
 src/
   window_capture.py   # find PokeMMO hwnd, track client rect, grab frames
   battle_reader.py    # detect battle state, read name (OCR), HP%, status icon, turn counter
@@ -38,7 +38,7 @@ tests/
 
 ### State machine (app.py)
 
-```
+```text
 WAITING  -> poll every 2s for a visible window titled "PokeMMO". Found -> IDLE
 IDLE     -> ~2 fps: check location-banner region (future dex feature);
             template-match enemy HP bar frame. Match -> BATTLE
@@ -58,9 +58,9 @@ Re-read the game window rect every ~1s; reposition overlay accordingly. Window m
 
 ## Catch probability (catch_calc.py)
 
-PokeMMO uses the **Gen 3/4 formula** (verified against the open-source PokeMMO Hub implementation, `src/hooks/useCatchRate.jsx` in https://github.com/PokeMMO-Tools/pokemmo-hub — port it 1:1). With `p = currentHP / maxHP` (read as fraction from the HP bar; max HP cancels out):
+PokeMMO uses the **Gen 3/4 formula** (verified against the open-source PokeMMO Hub implementation, `src/hooks/useCatchRate.jsx` in <https://github.com/PokeMMO-Tools/pokemmo-hub> — port it 1:1). With `p = currentHP / maxHP` (read as fraction from the HP bar; max HP cancels out):
 
-```
+```text
 x = ((3 - 2p) / 3) * base_catch_rate * ball_rate * status_rate
 if x > 255: P(catch) = 100%
 else:
@@ -70,7 +70,7 @@ else:
 
 Reference check: Bulbasaur (rate 45), 100% HP, Sleep, Poke Ball -> x = 30, P = 11.8% (matches pokemmohub.com).
 
-- `status_rate` (PokeMMO custom, NOT mainline): Sleep ×2, Freeze ×2, Paralysis ×1.5, none ×1. **Open question:** Poison/Burn are absent from the Hub list — verify in-game/forum whether they count ×1.5 or ×1; keep configurable.
+- `status_rate` (PokeMMO custom, NOT mainline): Sleep ×2, Freeze ×2, Paralysis ×1.5, none ×1. Poison/Burn are absent from the Hub list but apply the Gen 3/4 minor-status bonus ×1.5 (poison confirmed in-game). Kept configurable in `status_rates.json`.
 - `ball_rate` (PokeMMO custom values from Hub source, flat — all in `balls.json`):
   - Poke ×1, Great ×1.5, Ultra ×2, Heal ×1.25, Luxury ×2, Net ×3.5, Nest ×4, Dusk ×2.5, Quick ×5, Timer ×4, Repeat ×2.5, Dream ×4
   - The Hub models all balls as **flat multipliers** (no turn scaling for Timer, no turn-1 condition for Quick, no type condition for Net). **Open question:** whether PokeMMO applies conditions in-game or genuinely flattened these — verify via forum/wiki before shipping conditional logic. v1: show flat values, identical to Hub.
@@ -80,9 +80,9 @@ Reference check: Bulbasaur (rate 45), 100% HP, Sleep, Poke Ball -> x = 30, P = 1
 
 ## Data sources
 
-- **Base catch rates:** `src/data/catchRates.json` from https://github.com/PokeMMO-Tools/pokemmo-hub (611 entries, `{id, rate}`; dex id = National Dex order). Vendor a copy into `src/data/`.
-- **Species names/ids:** `monster.json` from the same repo (originates from the official PokeMMO client dump) or https://github.com/PokeMMOZone/PokeMMO-Data (`pokemon-data.json`).
-- **Encounter/location data (milestone 4):** `location-data.json` / `location-types.json` from https://github.com/PokeMMOZone/PokeMMO-Data — PokeMMO-specific spawns; do NOT use vanilla PokeAPI encounter tables.
+- **Base catch rates:** `src/data/catchRates.json` from <https://github.com/PokeMMO-Tools/pokemmo-hub> (611 entries, `{id, rate}`; dex id = National Dex order). Vendor a copy into `src/data/`.
+- **Species names/ids:** `monster.json` from the same repo (originates from the official PokeMMO client dump) or <https://github.com/PokeMMOZone/PokeMMO-Data> (`pokemon-data.json`).
+- **Encounter/location data (milestone 4):** `location-data.json` / `location-types.json` from <https://github.com/PokeMMOZone/PokeMMO-Data> — PokeMMO-specific spawns; do NOT use vanilla PokeAPI encounter tables.
 - **Update path:** PokeMMO client -> Settings -> Utilities -> Dump Moddable Resources -> Pokedex Data. Write a small `scripts/update_data.py` that refreshes the vendored JSONs from the repos.
 
 ## Reading details (battle_reader.py)
@@ -97,7 +97,7 @@ Reference check: Bulbasaur (rate 45), 100% HP, Sleep, Poke Ball -> x = 30, P = 1
 
 Frameless, translucent, click-through, always-on-top. Docks to the top-right inside the game window. Layout:
 
-```
+```text
  Traumato          HP 23%   PAR
  ─────────────────────────────
  Pokéball   31%

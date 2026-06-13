@@ -1,0 +1,27 @@
+[project]
+name = "shakechecker"
+version = "0.1.0"
+description = "Passive screen-reading catch-rate overlay for PokeMMO (read-only, capture + display)"
+requires-python = ">=3.11"
+dependencies = [
+    "mss",
+    "numpy",
+    "opencv-python",
+    "pydantic",
+    "pywin32; sys_platform == 'win32'",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4"]
