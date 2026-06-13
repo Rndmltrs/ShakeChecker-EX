@@ -22,10 +22,12 @@ from pathlib import Path
 from battle_reader import BattleState, Calibration, load_calibration, read_battle
 from catch_calc import catch_probability
 from window_capture import (
+    WINDOW_TITLE,
     WindowCapture,
     find_pokemmo_hwnd,
     get_client_rect,
     is_window_alive,
+    iter_visible_windows,
     set_dpi_awareness,
 )
 
@@ -103,6 +105,32 @@ def analyze_image(image_path: str, base_rate: int, status: str, cal: Calibration
             )
 
 
+def list_windows() -> None:
+    """Diagnostic: print every visible top-level window and mark PokeMMO
+    matches, so window-detection problems can be seen directly."""
+    set_dpi_awareness()
+    windows = iter_visible_windows()
+    matches = 0
+    print(
+        f"{len(windows)} visible top-level windows (looking for titles starting with "
+        f"{WINDOW_TITLE!r}):\n"
+    )
+    for hwnd, title in windows:
+        is_match = title.startswith(WINDOW_TITLE)
+        rect = get_client_rect(hwnd)
+        size = (
+            f"{rect.width}x{rect.height} @ ({rect.left},{rect.top})" if rect else "no client rect"
+        )
+        mark = " <-- MATCH" if is_match else ""
+        if is_match:
+            matches += 1
+        print(f"  hwnd={hwnd:>10}  {size:28s}  {title!r}{mark}")
+    picked = find_pokemmo_hwnd()
+    print(f"\n{matches} title match(es). find_pokemmo_hwnd() -> {picked}")
+    if picked is not None:
+        print(f"  selected client rect: {get_client_rect(picked)}")
+
+
 def run(base_rate: int, status: str, cal: Calibration) -> None:
     balls = load_balls()
     status_rate = load_status_rates()[status]
@@ -169,7 +197,7 @@ def main() -> None:
         sys.stdout.reconfigure(encoding="utf-8")
 
     parser = argparse.ArgumentParser(description="ShakeChecker milestone-1 console output")
-    group = parser.add_mutually_exclusive_group(required=True)
+    group = parser.add_mutually_exclusive_group()
     group.add_argument("--species", help="species name, e.g. Onix")
     group.add_argument("--rate", type=int, help="base catch rate override")
     parser.add_argument(
@@ -182,7 +210,19 @@ def main() -> None:
         "--image",
         help="offline mode: analyze a single PNG (e.g. a fixture) instead of the live window",
     )
+    parser.add_argument(
+        "--list-windows",
+        action="store_true",
+        help="diagnostic: list visible windows and PokeMMO matches, then exit",
+    )
     args = parser.parse_args()
+
+    if args.list_windows:
+        list_windows()
+        return
+
+    if args.species is None and args.rate is None:
+        parser.error("one of --species or --rate is required (or use --list-windows)")
 
     base_rate = args.rate if args.rate is not None else lookup_catch_rate(args.species)
     cal = load_calibration(ROOT / "calibration.toml")
