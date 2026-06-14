@@ -148,12 +148,13 @@ class ChatCalibration(BaseModel):
     upscale: int
 
 
-class NarrationCalibration(BaseModel):
+class BattleTextCalibration(BaseModel):
     top: float
     bottom: float
     left: float
     right: float
     upscale: int
+    menu_keywords_min: int
 
 
 class Calibration(BaseModel):
@@ -162,7 +163,7 @@ class Calibration(BaseModel):
     name: NameCalibration
     battle_ui: BattleUiCalibration
     chat: ChatCalibration
-    narration: NarrationCalibration
+    battle_text: BattleTextCalibration
 
 
 def load_calibration(path: Path | str) -> Calibration:

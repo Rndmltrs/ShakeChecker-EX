@@ -5,9 +5,10 @@ from pathlib import Path
 import cv2
 
 from battle_log import (
+    has_command_menu,
     is_catch_banner,
     parse_turn_number,
-    read_catch_banner,
+    read_battle_text,
     read_turn_number,
 )
 from battle_reader import load_calibration
@@ -39,22 +40,52 @@ def test_is_catch_banner_keywords():
     assert is_catch_banner([]) is False
 
 
-def test_read_catch_banner_detects_catch_fixture():
+def test_has_command_menu_keywords():
+    assert has_command_menu(["FIGHT", "BAG", "POKEMON", "RUN"], 2) is True
+    assert has_command_menu(["fight", "bag"], 2) is True
+    assert has_command_menu(["RUN"], 2) is False  # one stray word is not the menu
+    # move submenu / narration / chat-style lines are not the command menu
+    assert has_command_menu(["False Swipe", "Spore", "Soak"], 2) is False
+    assert has_command_menu(["Monferno used Ember!"], 2) is False
+    assert has_command_menu([], 2) is False
+
+
+def test_read_battle_text_detects_command_menu():
+    # command menu visible at two window aspect ratios
+    for name in ("full_health_no_status.png", "1920x1080_resolution.png"):
+        img = cv2.imread(str(ROOT / "fixtures" / name))
+        assert read_battle_text(img, CAL.battle_text).menu_present is True, name
+
+
+def test_read_battle_text_no_menu_during_action_or_submenu():
+    for name in (
+        "batle_action_attack_selected.png",  # action textbox
+        "two_third_green_health_cave.png",  # move submenu
+        "overworld_city_running.png",  # not in battle
+    ):
+        img = cv2.imread(str(ROOT / "fixtures" / name))
+        assert read_battle_text(img, CAL.battle_text).menu_present is False, name
+
+
+def test_read_battle_text_detects_catch_fixture():
     img = cv2.imread(
         str(ROOT / "fixtures" / "batle_action_pokemon_catched_text_after pokeball_disapeared.png")
     )
-    assert read_catch_banner(img, CAL.narration) is True
+    bt = read_battle_text(img, CAL.battle_text)
+    assert bt.caught is True
+    # crucially, the catch is read from the in-viewport box, NOT the chat log's
+    # stale "Geodude was caught!" line, which sits below this band.
+    assert bt.menu_present is False
 
 
-def test_read_catch_banner_false_before_text_appears():
-    # ball resting on the field, no catch text yet -> not a catch
+def test_read_battle_text_false_before_catch_text_appears():
     img = cv2.imread(str(ROOT / "fixtures" / "batle_action_pokemon_catched_dark_pokeballpng.png"))
-    assert read_catch_banner(img, CAL.narration) is False
+    assert read_battle_text(img, CAL.battle_text).caught is False
 
 
-def test_read_catch_banner_no_catch_in_normal_battle():
+def test_read_battle_text_no_catch_in_normal_battle():
     img = cv2.imread(str(ROOT / "fixtures" / "full_health_no_status.png"))
-    assert read_catch_banner(img, CAL.narration) is False
+    assert read_battle_text(img, CAL.battle_text).caught is False
 
 
 def test_parse_turn_number():
@@ -157,3 +188,75 @@ def test_bar_floor_never_lowers_chat_value():
     t.observe(5, enemy_asleep=False)
     feed_bar(t, [True, False, True])  # floor 1 must not reduce 4
     assert t.turns_completed == 4
+
+
+# --- chat-independent command-menu turn counter ---
+
+
+def play_turn(t: TurnTracker) -> None:
+    """Simulate one committed turn: menu up -> player acts (bar vanishes during
+    the animation) -> menu reappears for the next turn."""
+    t.observe_menu(True)  # waiting for input
+    t.observe_menu(False)  # action committed, menu closes
+    feed_bar(t, [True, False, True])  # attack animation: bar vanishes & returns
+
+
+def test_menu_first_appearance_is_turn_one():
+    t = TurnTracker()
+    t.observe_menu(True)  # turn 1 prompt, no action yet
+    assert t.turns_completed == 0
+
+
+def test_menu_counts_each_committed_turn():
+    t = TurnTracker()
+    play_turn(t)  # turn 1 committed
+    t.observe_menu(True)  # turn 2 prompt
+    assert t.turns_completed == 1
+    play_turn(t)  # turn 2 committed (already at menu, re-open after action)
+    t.observe_menu(True)  # turn 3 prompt
+    assert t.turns_completed == 2
+
+
+def test_menu_reopen_without_action_does_not_count():
+    # player opens FIGHT/BAG then cancels: menu closes and reopens with NO action
+    t = TurnTracker()
+    t.observe_menu(True)
+    t.observe_menu(False)  # opened a submenu
+    t.observe_menu(True)  # cancelled back to the menu
+    assert t.turns_completed == 0
+
+
+def test_menu_ocr_flicker_does_not_count():
+    # a single missed OCR frame (menu briefly reads absent) is not a turn
+    t = TurnTracker()
+    t.observe_menu(True)
+    t.observe_menu(False)  # flicker
+    t.observe_menu(True)
+    t.observe_menu(False)  # flicker
+    t.observe_menu(True)
+    assert t.turns_completed == 0
+
+
+def test_chat_overrides_menu_count_upward():
+    t = TurnTracker()
+    play_turn(t)  # menu count -> 1
+    t.observe(5, enemy_asleep=False)  # chat is authoritative
+    assert t.turns_completed == 4
+
+
+def test_menu_count_never_lowers_chat_value():
+    t = TurnTracker()
+    t.observe(5, enemy_asleep=False)
+    play_turn(t)
+    t.observe_menu(True)  # would be turn 2 from menu, must not reduce 4
+    assert t.turns_completed == 4
+
+
+def test_menu_count_survives_reset():
+    t = TurnTracker()
+    play_turn(t)
+    t.observe_menu(True)
+    assert t.turns_completed == 1
+    t.reset()
+    t.observe_menu(True)
+    assert t.turns_completed == 0  # fresh battle, turn 1

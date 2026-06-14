@@ -20,7 +20,7 @@ import sys
 import time
 from pathlib import Path
 
-from battle_log import read_catch_banner, read_turn_number
+from battle_log import read_battle_text, read_turn_number
 from battle_reader import (
     BattleState,
     Calibration,
@@ -59,9 +59,9 @@ BATTLE_END_GRACE_S = 1.5
 # Chat OCR is comparatively expensive; turns change slowly, so poll it at most
 # this often rather than every battle frame.
 CHAT_OCR_INTERVAL_S = 1.0
-# The catch banner is read from the in-viewport narration box (read_catch_banner).
-# It shows for ~1.5-2s, so sampling a few times a second reliably catches it.
-NARRATION_OCR_INTERVAL_S = 0.5
+# The in-viewport text box (command menu + catch banner) is OCR'd at most this
+# often. Fast enough to catch the menu each turn and the ~1.5-2s catch banner.
+BATTLE_TEXT_OCR_INTERVAL_S = 0.3
 
 
 class AppState(enum.Enum):
@@ -214,7 +214,7 @@ def run(species_override: dict | None, status_override: str | None, cal: Calibra
     hwnd: int | None = None
     last_seen_battle = 0.0
     last_chat_ocr = 0.0
-    last_narration_ocr = 0.0
+    last_battle_text_ocr = 0.0
     last_line = ""
     cached: dict | None = None  # enemy for the current battle
     turns = TurnTracker()
@@ -265,7 +265,7 @@ def run(species_override: dict | None, status_override: str | None, cal: Calibra
                 turns.reset()
                 hp.reset()
                 last_chat_ocr = 0.0
-                last_narration_ocr = 0.0
+                last_battle_text_ocr = 0.0
                 caught_handled = False
                 print("battle detected")
 
@@ -273,24 +273,22 @@ def run(species_override: dict | None, status_override: str | None, cal: Calibra
             turns.observe_bar(has_bar)
             asleep = reading.state is BattleState.SINGLE and reading.bars[0].status is Status.SLP
 
-            # poll the chat (throttled) for the turn number only. The catch is
-            # NOT read here: the chat log lags ~1s and at the catch moment still
-            # shows the previous battle's catch line — see read_catch_banner.
+            # poll the chat (throttled) for the EXACT turn number when visible.
+            # The catch is NOT read here: the chat log lags ~1s and at the catch
+            # moment still shows the previous battle's catch line.
             if now - last_chat_ocr >= CHAT_OCR_INTERVAL_S:
                 turns.observe(read_turn_number(frame, cal.chat), asleep)
                 last_chat_ocr = now
 
-            # Catch detection from the in-viewport narration banner ("Gotcha! /
-            # X was caught!"), which belongs to the current frame. The enemy bar
-            # lingers during the catch, so we read it while still "in battle";
-            # the banner means THIS enemy (already identified) was caught.
-            if (
-                not caught_handled
-                and cached is not None
-                and now - last_narration_ocr >= NARRATION_OCR_INTERVAL_S
-            ):
-                last_narration_ocr = now
-                if read_catch_banner(frame, cal.narration):
+            # One OCR of the in-viewport text box (throttled) drives both the
+            # chat-independent turn counter (command menu reappears each turn) and
+            # catch detection ("Gotcha! / X was caught!"). Both belong to the
+            # current frame; see [battle_text] in calibration.toml.
+            if now - last_battle_text_ocr >= BATTLE_TEXT_OCR_INTERVAL_S:
+                last_battle_text_ocr = now
+                bt = read_battle_text(frame, cal.battle_text)
+                turns.observe_menu(bt.menu_present)
+                if bt.caught and not caught_handled and cached is not None:
                     print(f"caught {cached['name']}!")
                     caught_handled = True
                     last_line = ""
