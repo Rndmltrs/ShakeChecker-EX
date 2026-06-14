@@ -60,6 +60,21 @@ def subheader_text(catch_rate: int, turn: int) -> str:
     return f"Rate: {catch_rate}   ·   Turn {turn}"
 
 
+# Status code -> (label, badge background) following the in-game colour scheme.
+_STATUS_BADGE = {
+    "slp": ("SLP", "#7a7a7a"),
+    "par": ("PAR", "#b59a00"),
+    "psn": ("PSN", "#9b4dca"),
+    "brn": ("BRN", "#d4602f"),
+    "frz": ("FRZ", "#3f9fd4"),
+}
+
+
+def status_badge(status: str | None) -> tuple[str, str] | None:
+    """(label, background colour) for a status, or None for no status (-> hidden)."""
+    return _STATUS_BADGE.get(status.lower()) if status else None
+
+
 class Overlay(QWidget):
     def __init__(self, ball_names: list[str], loader: SpriteLoader | None = None) -> None:
         super().__init__()
@@ -109,8 +124,15 @@ class Overlay(QWidget):
         # Ignored width: a long name clips instead of widening the panel (which
         # would make the right-anchored dock position jump).
         self._name.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self._status = QLabel()
+        status_font = QFont(mono)
+        status_font.setPixelSize(11)
+        status_font.setBold(True)
+        self._status.setFont(status_font)
+        self._status.setVisible(False)
         header.addWidget(self._sprite)
         header.addWidget(self._name, 1)
+        header.addWidget(self._status)
         col.addLayout(header)
 
         # subheader: catch rate + turn
@@ -156,12 +178,14 @@ class Overlay(QWidget):
         turn: int,
         probs: dict[str, float],
         level: int | None = None,
+        status: str | None = None,
     ) -> None:
         """Update the overlay for the current enemy and show it."""
         self._set_sprite(dex_id)
         lvl = f' <span style="font-size:11px; color:#9aa0aa;">Lv.{level}</span>' if level else ""
         self._name.setText(f"{name}{lvl}")
         self._sub.setText(subheader_text(catch_rate, turn))
+        self._set_status(status)
         for ball, label in self._pct_labels.items():
             prob = probs.get(ball)
             if prob is None:
@@ -189,6 +213,18 @@ class Overlay(QWidget):
             self.move(*pos)
 
     # --- internals ---
+
+    def _set_status(self, status: str | None) -> None:
+        badge = status_badge(status)
+        if badge is None:
+            self._status.setVisible(False)
+            return
+        label, bg = badge
+        self._status.setText(f" {label} ")
+        self._status.setStyleSheet(
+            f"color: #ffffff; background: {bg}; border-radius: 4px; padding: 1px 4px;"
+        )
+        self._status.setVisible(True)
 
     def _set_sprite(self, dex_id: int) -> None:
         # Only (re)load on a species change; otherwise an animated GIF would be
@@ -229,7 +265,7 @@ def _demo() -> None:
         "Quick Ball": 0.49,
         "Dusk Ball": 0.245,
     }
-    ov.show_battle(419, "Floatzel", 75, 2, sample)
+    ov.show_battle(419, "Floatzel", 75, 2, sample, level=24, status="psn")
     ov.move(200, 200)  # standalone: no game window to dock to
     ov.show()
     sys.exit(app.exec())

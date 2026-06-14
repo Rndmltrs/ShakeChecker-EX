@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from overlay import Overlay, phys_to_logical, prob_color_hex, subheader_text
+from overlay import Overlay, phys_to_logical, prob_color_hex, status_badge, subheader_text
 
 # --- pure helpers (no Qt) ---
 
@@ -60,6 +60,23 @@ def test_no_level_renders_plain_name(qt_app):
     ov = Overlay(BALLS)
     ov.show_battle(66, "Machop", 180, 2, {})  # no level
     assert ov._name.text() == "Machop"
+
+
+def test_status_badge_mapping():
+    assert status_badge("psn") == ("PSN", "#9b4dca")
+    assert status_badge("PSN")[0] == "PSN"  # case-insensitive
+    assert status_badge("none") is None
+    assert status_badge(None) is None
+    assert status_badge("") is None
+
+
+def test_status_badge_shown_and_hidden(qt_app):
+    ov = Overlay(BALLS)
+    ov.show_battle(66, "Machop", 180, 2, {}, status="psn")
+    assert ov._status.isVisibleTo(ov) is True
+    assert "PSN" in ov._status.text()
+    ov.show_battle(66, "Machop", 180, 3, {}, status="none")
+    assert ov._status.isVisibleTo(ov) is False
 
 
 def test_missing_ball_shows_dash(qt_app):
