@@ -76,11 +76,15 @@ def test_template_no_catch_before_text_or_in_normal_battle():
 
 
 def test_template_detects_committed_action():
-    # "X used Y!" -> a real turn ran; the command menu / browse screens do not
-    assert _bt("batle_action_attack_selected.png").action is True
-    assert _bt("batle_action_item_selected.png").action is True
-    assert _bt("full_health_no_status.png").action is False  # command menu, no action
-    assert _bt("two_third_green_health_cave.png").action is False  # move submenu
+    # a committed action ("X used Y!" / "Go! Y!") -> a real turn ran
+    assert _bt("batle_action_attack_selected.png").action is True  # "used"
+    assert _bt("batle_action_item_selected.png").action is True  # "used"
+    assert _bt("batle_action_pokemon_switch_2_new_pokemon_enters.png").action is True  # "Go!"
+    # not actions: command menu, move submenu, and look-alikes "Got away"/"Gotcha"
+    assert _bt("full_health_no_status.png").action is False
+    assert _bt("two_third_green_health_cave.png").action is False
+    assert _bt("batle_action_run_selected.png").action is False  # "Got away" != "Go!"
+    assert _bt("batle_action_pokemon_catched_text_after pokeball_disapeared.png").action is False
 
 
 def test_parse_turn_number():

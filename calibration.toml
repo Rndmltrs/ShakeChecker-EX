@@ -175,11 +175,12 @@ left = 0.04
 right = 0.60
 menu_match_min = 0.72
 catch_match_min = 0.72
-# "used" appears in a committed action's narration ("X used Y!", incl. the enemy's
-# counter-attack each turn). It confirms a real turn so a bag/Pokemon browse that
-# is opened and cancelled (no action) does NOT advance the turn. Action 1.0 vs
-# <=0.60 otherwise.
-action_match_min = 0.72
+# A committed action's narration confirms a real turn (so a bag/Pokemon browse
+# opened and cancelled does NOT advance it). Two templates: "used" ("X used Y!",
+# incl. the enemy's counter each turn) and "Go!" (sending a Pokemon on a switch).
+# Higher threshold because "Go!" must not match "Got away"/"Gotcha" (those ~0.77);
+# the real words score 1.0, so 0.85 separates cleanly.
+action_match_min = 0.85
 
 [name]
 # Enemy name region: right of the status badge, above the bar. Relative to the

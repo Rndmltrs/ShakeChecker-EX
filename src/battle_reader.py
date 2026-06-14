@@ -433,8 +433,14 @@ class BattleTextReader:
         d = Path(templates_dir)
         self._menu_tpl = cv2.imread(str(d / "menu_fight.png"), cv2.IMREAD_GRAYSCALE)
         self._catch_tpl = cv2.imread(str(d / "catch_gotcha.png"), cv2.IMREAD_GRAYSCALE)
-        self._action_tpl = cv2.imread(str(d / "action_used.png"), cv2.IMREAD_GRAYSCALE)
-        if self._menu_tpl is None or self._catch_tpl is None or self._action_tpl is None:
+        # A committed action shows one of these: "X used Y!" (attack/item, and the
+        # enemy's counter), or "Go! Y!" (sending a Pokemon on a switch).
+        self._action_tpls = [
+            cv2.imread(str(d / "action_used.png"), cv2.IMREAD_GRAYSCALE),
+            cv2.imread(str(d / "action_go.png"), cv2.IMREAD_GRAYSCALE),
+        ]
+        loaded = [self._menu_tpl, self._catch_tpl, *self._action_tpls]
+        if any(t is None for t in loaded):
             raise FileNotFoundError(f"missing battle-text templates in {d}")
 
     def read(self, frame_bgr: np.ndarray) -> BattleText:
@@ -444,10 +450,11 @@ class BattleTextReader:
         if band.size == 0:
             return BattleText(menu_present=False, caught=False, action=False)
         gray = cv2.cvtColor(band, cv2.COLOR_BGR2GRAY)
+        action = any(self._match(gray, t) >= c.action_match_min for t in self._action_tpls)
         return BattleText(
             menu_present=self._match(gray, self._menu_tpl) >= c.menu_match_min,
             caught=self._match(gray, self._catch_tpl) >= c.catch_match_min,
-            action=self._match(gray, self._action_tpl) >= c.action_match_min,
+            action=action,
         )
 
     @staticmethod
