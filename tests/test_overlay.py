@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from overlay import Overlay, prob_color_hex, subheader_text
+from overlay import Overlay, phys_to_logical, prob_color_hex, subheader_text
 
 # --- pure helpers (no Qt) ---
 
@@ -69,3 +69,9 @@ def test_static_species_clears_movie(qt_app):
     ov.show_battle(1, "Bulbasaur", 45, 1, {})  # animated -> movie set
     ov.show_battle(1000, "GenSix", 50, 1, {})  # static png -> movie cleared
     assert ov._movie is None
+
+
+def test_phys_to_logical_scales_by_dpr(qt_app):
+    dpr = qt_app.primaryScreen().devicePixelRatio()
+    lx, ly = phys_to_logical(1000, 600)
+    assert (lx, ly) == (round(1000 / dpr), round(600 / dpr))

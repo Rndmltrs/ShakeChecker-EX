@@ -14,11 +14,27 @@ Run standalone to preview the look without the game:
 
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont, QMovie
+from PyQt6.QtCore import QPoint, Qt
+from PyQt6.QtGui import QFont, QGuiApplication, QMovie
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from sprite_loader import SpriteLoader
+
+
+def phys_to_logical(px: int, py: int) -> tuple[int, int]:
+    """Convert a physical-pixel screen point (from win32) to Qt's logical-pixel
+    coordinates, which move() expects. They differ when Windows display scaling
+    is not 100%; without this the overlay lands on the wrong monitor. Uses the
+    target screen's device pixel ratio (refined from the primary's first guess),
+    which is exact for uniform scaling and close for mixed-DPI setups."""
+    primary = QGuiApplication.primaryScreen()
+    dpr = primary.devicePixelRatio() if primary else 1.0
+    lx, ly = px / dpr, py / dpr
+    screen = QGuiApplication.screenAt(QPoint(round(lx), round(ly)))
+    if screen is not None and screen.devicePixelRatio() != dpr:
+        dpr = screen.devicePixelRatio()
+        lx, ly = px / dpr, py / dpr
+    return round(lx), round(ly)
 
 SPRITE_H = 28  # Pokemon sprite height (px) — kept compact so the panel stays small
 BALL_H = 24  # ball icon height (px)
@@ -155,10 +171,11 @@ class Overlay(QWidget):
         self.hide()
 
     def dock_to(self, left: int, top: int, width: int) -> None:
-        """Place the overlay at the top-right inside a client rect (screen coords).
-        Position is computed from the constant PANEL_W (not the measured widget
-        width) and only applied on change, so it cannot jitter frame to frame."""
-        pos = (left + width - PANEL_W - DOCK_MARGIN, top + DOCK_MARGIN)
+        """Place the overlay at the top-right inside a client rect (PHYSICAL screen
+        coords from win32). Convert to Qt logical coords (DPI scaling), anchor by
+        the constant PANEL_W, and only move on change so it cannot jitter."""
+        lx, ly = phys_to_logical(left + width, top)
+        pos = (lx - PANEL_W - DOCK_MARGIN, ly + DOCK_MARGIN)
         if pos != self._last_pos:
             self._last_pos = pos
             self.move(*pos)
