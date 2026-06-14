@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from dex_tracker import EncounterData, MissingEntry, compute_missing
+from dex_tracker import EncounterData, MissingEntry, RegionResolver, compute_missing
 
 ROOT = Path(__file__).parent.parent
 ENCOUNTERS = ROOT / "src" / "data" / "encounters.json"
@@ -100,6 +100,37 @@ def test_route_number_must_match_exactly_not_fuzzily(data):
     # Johto has no Route 5; it must NOT fuzzy-collapse into "Route 35".
     assert data.match_location("Route 5", region="Johto") is None
     assert data.match_location("Route 35", region="Johto") == "JOHTO_ROUTE_35"
+
+
+# --- region resolution (stateful) ---
+
+
+def test_regions_for_name(data):
+    assert data.regions_for_name("Viridian Forest") == {"KANTO"}
+    assert data.regions_for_name("Route 5") == {"KANTO", "UNOVA"}  # ambiguous
+    assert data.regions_for_name("Nowhere 999") == set()
+
+
+def test_resolver_pins_region_from_unique_location(data):
+    r = RegionResolver(data)
+    # ambiguous name before any region is known -> unresolved
+    assert r.resolve("Route 5") is None
+    # a region-unique location pins Kanto
+    assert r.resolve("Viridian Forest") == "KANTO_VIRIDIAN_FOREST"
+    assert r.region == "KANTO"
+    # now the ambiguous route resolves against the remembered region
+    assert r.resolve("Route 5") == "KANTO_ROUTE_5"
+
+
+def test_resolver_takes_over_region_on_switch(data):
+    r = RegionResolver(data)
+    r.resolve("Viridian Forest")  # Kanto
+    assert r.region == "KANTO"
+    # arriving at a Unova-unique place switches the region (the harbour-town case)
+    assert r.resolve("Pinwheel Forest") == "UNOVA_PINWHEEL_FOREST"
+    assert r.region == "UNOVA"
+    # the same ambiguous "Route 5" now resolves to Unova, not Kanto
+    assert r.resolve("Route 5") == "UNOVA_ROUTE_5"
 
 
 def test_missing_here_excludes_legendaries_and_caught(data):

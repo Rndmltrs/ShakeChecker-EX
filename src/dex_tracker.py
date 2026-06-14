@@ -100,30 +100,18 @@ class EncounterData:
     def location_name(self, key: str) -> str:
         return self._locations[key]["name"]
 
-    def match_location(self, hud_name: str, region: str | None = None) -> str | None:
-        """Resolve an OCR'd HUD location name to a data key.
-
-        With a region hint, only that region's locations are considered (so the
-        shared "Route 5" name is unambiguous). Tries an exact normalized match
-        first, then a fuzzy match for OCR noise. Returns None if nothing clears
-        the threshold or the name is ambiguous across regions with no hint.
-        """
-        norm = _normalize(hud_name)
-        if not norm:
-            return None
-        region_u = region.upper() if region else None
+    def _candidate_keys(self, norm: str, region_u: str | None) -> list[str]:
+        """All location keys matching a normalized name (region-filtered): exact
+        normalized matches if any, else the best fuzzy match for OCR noise. The
+        number tokens must match exactly so fuzzy can't turn "Route 5" into
+        "Route 35"; only the word part is matched fuzzily."""
 
         def in_region(key: str) -> bool:
             return region_u is None or self._locations[key]["region"].upper() == region_u
 
         exact = [k for k in self._by_norm.get(norm, []) if in_region(k)]
-        if len(exact) == 1:
-            return exact[0]
-        if len(exact) > 1:
-            return None  # ambiguous (same name in multiple regions, no usable hint)
-
-        # A name's number tokens must match exactly so fuzzy matching can't turn
-        # "Route 5" into "Route 35"; the word part is still matched fuzzily.
+        if exact:
+            return exact
         qd = _digits(norm)
         candidates = {
             n: keys
@@ -131,12 +119,32 @@ class EncounterData:
             if _digits(n) == qd and any(in_region(k) for k in keys)
         }
         if not candidates:
-            return None
+            return []
         best = process.extractOne(norm, candidates.keys(), scorer=fuzz.WRatio)
         if best is None or best[1] < MATCH_THRESHOLD:
+            return []
+        return [k for k in candidates[best[0]] if in_region(k)]
+
+    def match_location(self, hud_name: str, region: str | None = None) -> str | None:
+        """Resolve an OCR'd HUD location name to a data key.
+
+        With a region hint, only that region's locations are considered (so the
+        shared "Route 5" name is unambiguous). Returns None if nothing clears the
+        threshold or the name is ambiguous across regions with no usable hint.
+        """
+        norm = _normalize(hud_name)
+        if not norm:
             return None
-        keys = [k for k in candidates[best[0]] if in_region(k)]
+        keys = self._candidate_keys(norm, region.upper() if region else None)
         return keys[0] if len(keys) == 1 else None
+
+    def regions_for_name(self, hud_name: str) -> set[str]:
+        """The set of regions a HUD location name could belong to (ignoring any
+        hint). A single-element set means the name pins the region down."""
+        norm = _normalize(hud_name)
+        if not norm:
+            return set()
+        return {self._locations[k]["region"] for k in self._candidate_keys(norm, None)}
 
     def missing_here(
         self, key: str, period: str, season: int, caught: set[int]
@@ -145,3 +153,31 @@ class EncounterData:
         if loc is None:
             return []
         return compute_missing(loc["encounters"], period, season, caught, self._legendaries)
+
+
+class RegionResolver:
+    """Tracks the current region so ambiguous location names ("Route 5" exists in
+    Kanto and Unova) resolve correctly, with no manual region input.
+
+    The HUD shows only the bare location name. As soon as a name pins the region
+    (it exists in exactly one region -- forests, caves, most named places), we
+    adopt it; switching regions means passing through such a place (e.g. the
+    harbour town you arrive in), so the region is taken over automatically.
+    Ambiguous names then resolve against the remembered region. Encounter-less
+    towns aren't in the data and simply don't change the region.
+    """
+
+    def __init__(self, data: EncounterData) -> None:
+        self._data = data
+        self.region: str | None = None
+
+    def reset(self) -> None:
+        self.region = None
+
+    def resolve(self, hud_name: str) -> str | None:
+        """Location key for the current HUD name, updating the tracked region when
+        the name determines it. Returns None if unmatched or still ambiguous."""
+        regions = self._data.regions_for_name(hud_name)
+        if len(regions) == 1:
+            self.region = next(iter(regions))  # name pins the region -> adopt/switch
+        return self._data.match_location(hud_name, self.region)
