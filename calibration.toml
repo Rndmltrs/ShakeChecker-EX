@@ -104,6 +104,16 @@ magenta = [140, 175]
 red = [0, 12]
 cyan = [85, 99]
 
+[location]
+# Top-left HUD location line ("Wayward Cave Ch. 2"). OCR'd to decide if the area
+# is a cave (Dusk Ball boost). Region verified on Eterna Forest / Victory Road /
+# Route 41 / Floaroma Town fixtures; the " Ch. N" suffix is stripped in code.
+top = 0.015
+bottom = 0.05
+left = 0.005
+right = 0.16
+upscale = 3
+
 [trainer]
 # Trainer battles show a party indicator — six small icons (grey circles / Poke
 # balls / Pokemon icons) — in a fixed strip just below the enemy HP bar, which

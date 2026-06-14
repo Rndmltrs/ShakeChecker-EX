@@ -165,6 +165,14 @@ class TrainerCalibration(BaseModel):
     edge_frac_min: float
 
 
+class LocationCalibration(BaseModel):
+    top: float
+    bottom: float
+    left: float
+    right: float
+    upscale: int
+
+
 class Calibration(BaseModel):
     hp_bar: HpBarCalibration
     status: StatusCalibration
@@ -173,6 +181,7 @@ class Calibration(BaseModel):
     chat: ChatCalibration
     battle_text: BattleTextCalibration
     trainer: TrainerCalibration
+    location: LocationCalibration
 
 
 def load_calibration(path: Path | str) -> Calibration:

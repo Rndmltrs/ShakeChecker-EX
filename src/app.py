@@ -38,6 +38,7 @@ from battle_reader import (
 )
 from catch_calc import BattleContext, ball_multiplier, catch_probability
 from hp_settler import HpSettler
+from location_reader import is_cave_location, read_location
 from name_reader import NameReader
 from overlay import Overlay, scale_for_window
 from status_settler import StatusSettler
@@ -177,7 +178,8 @@ def analyze_image(
         if reading.state is BattleState.SINGLE and enemy is not None:
             turn = read_turn_number(frame, cal.chat)
             turns_completed = turn - 1 if turn else 0
-            ctx = battle_context(enemy, turns_completed=turns_completed)
+            dusk = is_cave_location(read_location(frame, cal.location))
+            ctx = battle_context(enemy, turns_completed=turns_completed, dusk_active=dusk)
             probs = ball_probs(bar.hp_pct, enemy["catch_rate"], status_rates[status], balls, ctx)
             turn_note = f"[turn {turn}] " if turn else "[turn ?] "
             print("  " + turn_note + format_line(label, bar.hp_pct, status, probs))
@@ -250,6 +252,8 @@ class LiveLoop:
         self.hp = HpSettler()
         self.status = StatusSettler()
         self.caught_handled = False
+        self.dusk_active = False  # cave/night -> Dusk Ball boost
+        self._loc_read = False  # location OCR'd this battle yet
 
     def start(self) -> None:
         species_src = (
@@ -323,9 +327,20 @@ class LiveLoop:
         self.last_chat_ocr = 0.0
         self.last_battle_text_ocr = 0.0
         self.caught_handled = False
+        self.dusk_active = False
+        self._loc_read = False
         print("battle detected")
 
     def _battle_step(self, frame, reading, rect, now: float) -> None:
+        # Read the location once per battle (it never changes mid-battle) to set
+        # the Dusk Ball cave boost.
+        if not self._loc_read:
+            loc = read_location(frame, self.cal.location)
+            self.dusk_active = is_cave_location(loc)
+            self._loc_read = True
+            if self.dusk_active:
+                print(f"location: {loc} (cave -> Dusk Ball boosted)")
+
         asleep = reading.state is BattleState.SINGLE and reading.bars[0].status is Status.SLP
 
         # poll the chat (throttled) for the EXACT turn number when visible. The
@@ -395,6 +410,7 @@ class LiveLoop:
                 self.cached,
                 turns_completed=self.turns.turns_completed,
                 turns_asleep=self.turns.turns_asleep,
+                dusk_active=self.dusk_active,
             )
             probs = ball_probs(
                 hp_pct, self.cached["catch_rate"], self.status_rates[status], self.balls, ctx
