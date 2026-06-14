@@ -16,13 +16,15 @@ from __future__ import annotations
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QMovie
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from sprite_loader import SpriteLoader
 
 SPRITE_H = 28  # Pokemon sprite height (px) — kept compact so the panel stays small
 BALL_H = 24  # ball icon height (px)
-PANEL_W = 190  # fixed panel width: stops the dock position jumping as text widths change
+# Fixed panel width. Must exceed the content's natural width or Qt enforces a
+# larger, content-dependent minimum and the dock position jitters frame to frame.
+PANEL_W = 210
 DOCK_MARGIN = 12  # gap from the game window's top-right corner
 
 # probability colour thresholds (fraction 0-1) -> hex
@@ -30,10 +32,10 @@ _RED, _YELLOW, _GREEN = "#ff5555", "#ffcc44", "#55dd66"
 
 
 def prob_color_hex(prob: float) -> str:
-    """Colour hint for a catch probability (0-1): <30% red, 30-60% yellow, else green."""
-    if prob < 0.30:
+    """Colour hint for a catch probability (0-1): <50% red, 50-75% yellow, >=75% green."""
+    if prob < 0.50:
         return _RED
-    if prob < 0.60:
+    if prob < 0.75:
         return _YELLOW
     return _GREEN
 
@@ -48,6 +50,7 @@ class Overlay(QWidget):
         self._loader = loader or SpriteLoader()
         self._movie: QMovie | None = None
         self._current_dex: int | None = None  # avoid restarting the GIF every frame
+        self._last_pos: tuple[int, int] | None = None  # avoid redundant moves
         self._pct_labels: dict[str, QLabel] = {}
 
         self.setFixedWidth(PANEL_W)
@@ -86,6 +89,9 @@ class Overlay(QWidget):
         name_font.setPixelSize(20)
         name_font.setBold(True)
         self._name.setFont(name_font)
+        # Ignored width: a long name clips instead of widening the panel (which
+        # would make the right-anchored dock position jump).
+        self._name.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         header.addWidget(self._sprite)
         header.addWidget(self._name, 1)
         col.addLayout(header)
@@ -96,6 +102,7 @@ class Overlay(QWidget):
         sub_font.setPixelSize(13)
         self._sub.setFont(sub_font)
         self._sub.setStyleSheet("color: #aaaaaa;")
+        self._sub.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         col.addWidget(self._sub)
 
         line = QFrame()
@@ -149,8 +156,12 @@ class Overlay(QWidget):
 
     def dock_to(self, left: int, top: int, width: int) -> None:
         """Place the overlay at the top-right inside a client rect (screen coords).
-        Width is fixed, so this is a stable position (no per-frame jitter)."""
-        self.move(left + width - self.width() - DOCK_MARGIN, top + DOCK_MARGIN)
+        Position is computed from the constant PANEL_W (not the measured widget
+        width) and only applied on change, so it cannot jitter frame to frame."""
+        pos = (left + width - PANEL_W - DOCK_MARGIN, top + DOCK_MARGIN)
+        if pos != self._last_pos:
+            self._last_pos = pos
+            self.move(*pos)
 
     # --- internals ---
 
