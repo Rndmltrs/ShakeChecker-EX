@@ -68,8 +68,12 @@ def test_has_command_menu_keywords():
 
 
 def test_read_battle_text_detects_command_menu():
-    # command menu visible at two window aspect ratios
-    for name in ("full_health_no_status.png", "1920x1080_resolution.png"):
+    # command menu visible at two aspect ratios and with the chat minimized
+    for name in (
+        "full_health_no_status.png",
+        "1920x1080_resolution.png",
+        "batle_minimized_chat.png",  # chat hidden -> menu is the turn signal
+    ):
         img = cv2.imread(str(ROOT / "fixtures" / name))
         assert read_battle_text(img, CAL.battle_text).menu_present is True, name
 

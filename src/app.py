@@ -71,9 +71,12 @@ BATTLE_END_GRACE_S = 1.5
 # briskly — the overlay's turn should update within a fraction of a second of the
 # new turn, not a full second later. (No over-count risk: the chat is exact.)
 CHAT_OCR_INTERVAL_S = 0.4
+# When the chat keeps reading nothing (minimized / wrong tab) back off to this so
+# the wasted OCR doesn't slow the loop; the menu fallback then drives the turns.
+CHAT_OCR_IDLE_S = 2.0
 # The in-viewport text box (command menu + catch banner) is OCR'd at most this
-# often. Fast enough to catch the menu each turn and the ~1.5-2s catch banner.
-BATTLE_TEXT_OCR_INTERVAL_S = 0.3
+# often. Drives the chat-independent turn counter, so keep it brisk.
+BATTLE_TEXT_OCR_INTERVAL_S = 0.25
 
 
 class AppState(enum.Enum):
@@ -259,6 +262,9 @@ class LiveLoop:
         self.caught_handled = False
         self.dusk_active = False  # cave/night -> Dusk Ball boost
         self._loc_read = False  # location OCR'd this battle yet
+        self._chat_misses = 0  # consecutive chat reads with no turn (chat hidden?)
+        self._is_trainer = False  # trainer battle -> overlay hidden
+        self._trainer_decided = False  # trainer vs wild settled this battle
 
     def start(self) -> None:
         species_src = (
@@ -337,6 +343,9 @@ class LiveLoop:
         self.caught_handled = False
         self.dusk_active = False
         self._loc_read = False
+        self._chat_misses = 0
+        self._is_trainer = False
+        self._trainer_decided = False
         print("battle detected")
 
     def _battle_step(self, frame, reading, rect, now: float) -> None:
@@ -353,11 +362,13 @@ class LiveLoop:
 
         asleep = reading.state is BattleState.SINGLE and reading.bars[0].status is Status.SLP
 
-        # poll the chat (throttled) for the EXACT turn number when visible. The
-        # catch is NOT read here: the chat log lags ~1s and at the catch moment
-        # still shows the previous battle's catch line.
-        if now - self.last_chat_ocr >= CHAT_OCR_INTERVAL_S:
+        # poll the chat for the EXACT turn number when visible. Back off when the
+        # chat keeps reading nothing (minimized / wrong tab) so the wasted OCR
+        # doesn't slow the loop and the menu fallback stays responsive.
+        chat_interval = CHAT_OCR_INTERVAL_S if self._chat_misses < 4 else CHAT_OCR_IDLE_S
+        if now - self.last_chat_ocr >= chat_interval:
             chat_turn = read_turn_number(frame, self.cal.chat)
+            self._chat_misses = 0 if chat_turn is not None else self._chat_misses + 1
             before = self.turns.turns_completed
             self.turns.observe(chat_turn, asleep)
             if self.debug and self.turns.turns_completed > before:
@@ -372,6 +383,15 @@ class LiveLoop:
             bt = read_battle_text(frame, self.cal.battle_text)
             before = self.turns.turns_completed
             self.turns.observe_menu(bt.menu_present)
+            # Decide trainer vs wild ONCE per battle, and only while the command
+            # menu is up: then the scene is static, so the party-icon strip below
+            # the bar is reliable. Checking during animations gave false positives.
+            stable = bt.menu_present and reading.state is BattleState.SINGLE
+            if stable and not self._trainer_decided:
+                self._is_trainer = is_trainer_battle(frame, reading.bars[0], self.cal.trainer)
+                self._trainer_decided = True
+                if self._is_trainer:
+                    print("trainer battle: overlay hidden")
             if self.debug:
                 if bt.menu_present != self._dbg_menu:
                     print(f"[dbg] command menu {'DETECTED' if bt.menu_present else 'gone'}")
@@ -386,12 +406,8 @@ class LiveLoop:
         if self.caught_handled:
             return  # enemy caught: stop updating; battle ends when the UI clears
         if reading.state is BattleState.SINGLE:
-            if is_trainer_battle(frame, reading.bars[0], self.cal.trainer):
-                # trainer battle: nothing catchable -> hide the overlay
-                if self.last_line != "trainer":
-                    print("trainer battle: overlay hidden")
-                    self.last_line = "trainer"
-                self.overlay.hide_battle()
+            if self._is_trainer:
+                self.overlay.hide_battle()  # trainer: nothing catchable
             else:
                 self._update_single(frame, reading.bars[0], rect)
         elif reading.state is BattleState.MULTI and self.last_line != "multi":

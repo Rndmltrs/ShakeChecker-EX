@@ -111,6 +111,7 @@ def test_five_horde_is_multi():
         ("two_third_green_health_cave.png", False),
         ("red_health_no_status_cave.png", False),
         ("1920x1080_resolution.png", False),
+        ("batle_minimized_chat.png", False),  # wild battle, chat minimized
     ],
 )
 def test_trainer_battle_detection(name, is_trainer):
