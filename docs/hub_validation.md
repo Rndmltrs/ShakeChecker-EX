@@ -42,3 +42,36 @@ const z = (y / 65536) * (y / 65536) * (y / 65536) * (y / 65536) * 100
 
 The Bulbasaur case is the documented reference from pokemmohub.com (11.8%,
 CLAUDE.md) and is pinned in `tests/test_catch_calc.py`.
+
+## Conditional ball multipliers (PokeMMO, not the flat Hub model)
+
+The Hub models every ball as a flat multiplier. PokeMMO actually applies
+conditions — verified against the PokeMMO Wiki and the PokeMMO-specific catch
+calculator `c4vv/CatchCalc` (`pokeballs.js`). Ported into `catch_calc.py`
+(`BALL_RULES`) / `src/data/balls.json`:
+
+| Ball | Multiplier | Condition |
+|---|---|---|
+| Quick | 5.0 else 1.0 | first turn only (`turns_completed == 0`) |
+| Timer | `1 + min(3, turns_completed*0.3)` (max 4) | ramps per completed turn |
+| Net | 3.5 else 1.0 | enemy is Water or Bug type |
+| Nest | `min(max(7 - 0.2*(level-1), 1), 4)` | low enemy level |
+| Dusk | 2.5 else 1.0 | night / cave |
+| Dream | `min(4, 1 + turns_asleep)` | scales with turns the enemy slept (0-3 → 1x-4x) |
+| Luxury | 1.0 | (Hub had 2.0 — wrong; Luxury is friendship, not catch) |
+| Repeat | 1.0 (placeholder) | CatchCalc uses a chain count; unconfirmed, left at 1.0 |
+| Poke/Great/Ultra/Heal | 1 / 1.5 / 2 / 1.25 | flat |
+
+The flat balls and the core formula are confirmed against
+pokemmo.help/capture-chance — Roselia (rate 150, 50% HP, no status): Poke
+39.21% (we compute 39.22%, a 65535-vs-65536 rounding artefact), Great 58.82%.
+
+Turn-dependent balls (Quick, Timer, Dream) need the battle turn / sleep-turn
+counter; until it lands the app assumes turn 1 with no accrued sleep
+(`turns_completed = turns_asleep = 0`), which is correct for the first turn
+(Quick ×5, Timer ×1, Dream ×1). The Hub's flat Dream ×4 was wrong — Dream is
+×1 against a non-sleeping target. Dusk (night/cave) and Repeat (caught-before)
+depend on data that arrives in milestone 4 and currently resolve to ×1.
+
+Sources: [PokeMMO Wiki — Quick Ball](https://pokemmo.shoutwiki.com/wiki/Quick_Ball),
+[c4vv/CatchCalc](https://github.com/c4vv/CatchCalc).

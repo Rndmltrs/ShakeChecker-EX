@@ -122,9 +122,48 @@ class StatusCalibration(BaseModel):
     hue: StatusHueCalibration
 
 
+class NameCalibration(BaseModel):
+    dx0: int
+    dx1: int
+    dy0: int
+    dy1: int
+    upscale: int
+    min_match_score: float
+
+
+class BattleUiCalibration(BaseModel):
+    top: float
+    bottom: float
+    left: float
+    right: float
+    dark_val_max: int
+    min_dark_frac: float
+
+
+class ChatCalibration(BaseModel):
+    top: float
+    bottom: float
+    left: float
+    right: float
+    upscale: int
+
+
+class BattleTextCalibration(BaseModel):
+    top: float
+    bottom: float
+    left: float
+    right: float
+    upscale: int
+    menu_keywords_min: int
+
+
 class Calibration(BaseModel):
     hp_bar: HpBarCalibration
     status: StatusCalibration
+    name: NameCalibration
+    battle_ui: BattleUiCalibration
+    chat: ChatCalibration
+    battle_text: BattleTextCalibration
 
 
 def load_calibration(path: Path | str) -> Calibration:
@@ -310,6 +349,19 @@ def read_enemy_bars(frame_bgr: np.ndarray, cal: Calibration) -> list[BarReading]
             continue
         merged.append(bar)
     return merged
+
+
+def is_battle_ui_present(frame_bgr: np.ndarray, cal: BattleUiCalibration) -> bool:
+    """True if the battle command panel (dark bottom band) is on screen.
+
+    This is the authoritative in-battle signal: it stays present through the
+    intro banner and attack animations, unlike the enemy HP bar."""
+    h, w = frame_bgr.shape[:2]
+    band = frame_bgr[int(h * cal.top) : int(h * cal.bottom), int(w * cal.left) : int(w * cal.right)]
+    if band.size == 0:
+        return False
+    gray = cv2.cvtColor(band, cv2.COLOR_BGR2GRAY)
+    return float(np.mean(gray < cal.dark_val_max)) >= cal.min_dark_frac
 
 
 def read_battle(frame_bgr: np.ndarray, cal: Calibration) -> BattleReading:

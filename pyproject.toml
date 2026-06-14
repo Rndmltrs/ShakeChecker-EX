@@ -9,6 +9,8 @@ dependencies = [
     "opencv-python",
     "pydantic",
     "pywin32; sys_platform == 'win32'",
+    "rapidocr-onnxruntime",
+    "rapidfuzz",
 ]
 
 [project.optional-dependencies]

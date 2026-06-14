@@ -74,8 +74,10 @@ def fold_confusables(text: str) -> str:
 
 
 def title_matches(title: str) -> bool:
-    """True if `title` is the PokeMMO window title, tolerant of homoglyphs."""
-    return fold_confusables(title).lower().startswith(WINDOW_TITLE.lower())
+    """True only if `title` is exactly the PokeMMO game window title (homoglyph-
+    folded), not a browser tab that merely starts with 'PokeMMO' (e.g.
+    'PokeMMO Help - Google Chrome'). The game window is titled exactly 'PokeMMO'."""
+    return fold_confusables(title).strip().lower() == WINDOW_TITLE.lower()
 
 
 def set_dpi_awareness() -> None:
@@ -114,9 +116,9 @@ def iter_visible_windows() -> list[tuple[int, str]]:
 
 
 def find_pokemmo_hwnd() -> int | None:
-    """Visible window whose (homoglyph-folded) title starts with 'PokeMMO'.
+    """Visible window whose (homoglyph-folded) title is exactly 'PokeMMO'.
     If several match, pick the one with the largest client area (the real game
-    window, not a zero-sized helper/tooltip with the same title prefix)."""
+    window, not a zero-sized helper/tooltip)."""
     best: int | None = None
     best_area = -1
     for hwnd, title in iter_visible_windows():

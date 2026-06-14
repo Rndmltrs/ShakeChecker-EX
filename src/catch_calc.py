@@ -1,15 +1,84 @@
 """Pure catch-probability math (Gen 3/4 formula as used by PokeMMO).
 
-Ported 1:1 from the PokeMMO Hub implementation
-(src/hooks/useCatchRate.jsx, github.com/PokeMMO-Tools/pokemmo-hub).
-This module performs no I/O; ball and status multipliers are plain arguments
-(tables live in src/data/balls.json and src/data/status_rates.json).
+The shake/probability math is ported 1:1 from the PokeMMO Hub implementation
+(src/hooks/useCatchRate.jsx, github.com/PokeMMO-Tools/pokemmo-hub). The
+conditional ball multipliers are ported from the PokeMMO-specific catch
+calculator (c4vv/CatchCalc, pokeballs.js). This module performs no I/O.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import dataclass
+
 X_CAP = 255.0
 SHAKE_SCALE = 65536.0
+
+# Enemy types that the Net Ball boosts (OpenCV-agnostic; lower-cased on use).
+NET_TYPES = frozenset({"water", "bug"})
+
+
+@dataclass(frozen=True)
+class BattleContext:
+    """Everything a conditional ball rule needs about the current battle.
+
+    `turns_completed` is 0 during the first turn (so Quick Ball is active and
+    Timer Ball is x1), then 1 after the first turn resolves, etc.
+    `turns_asleep` is how many turns the enemy has been asleep (Dream Ball)."""
+
+    turns_completed: int = 0
+    turns_asleep: int = 0
+    enemy_types: tuple[str, ...] = ()
+    enemy_level: int = 1
+    dusk_active: bool = False  # night or cave (Dusk Ball condition)
+    already_caught: bool = False  # Repeat Ball condition (unconfirmed rule)
+
+
+def _quick(ctx: BattleContext) -> float:
+    return 5.0 if ctx.turns_completed == 0 else 1.0
+
+
+def _timer(ctx: BattleContext) -> float:
+    return 1.0 + min(3.0, ctx.turns_completed * 0.3)
+
+
+def _net(ctx: BattleContext) -> float:
+    return 3.5 if NET_TYPES & {t.lower() for t in ctx.enemy_types} else 1.0
+
+
+def _nest(ctx: BattleContext) -> float:
+    return min(max(7.0 - 0.2 * (ctx.enemy_level - 1), 1.0), 4.0)
+
+
+def _dusk(ctx: BattleContext) -> float:
+    return 2.5 if ctx.dusk_active else 1.0
+
+
+def _dream(ctx: BattleContext) -> float:
+    # pokemmo.help: scales with turns asleep, 0-3 turns -> 1x..4x.
+    return min(4.0, 1.0 + ctx.turns_asleep)
+
+
+# Conditional ball rules, keyed by the "rule" field in balls.json.
+BALL_RULES: dict[str, Callable[[BattleContext], float]] = {
+    "quick": _quick,
+    "timer": _timer,
+    "net": _net,
+    "nest": _nest,
+    "dusk": _dusk,
+    "dream": _dream,
+}
+
+
+def ball_multiplier(ball: dict, ctx: BattleContext) -> float:
+    """Resolve a ball's catch multiplier: a flat `rate`, or a conditional
+    `rule` evaluated against `ctx`."""
+    if "rate" in ball:
+        return float(ball["rate"])
+    rule = ball.get("rule")
+    if rule in BALL_RULES:
+        return BALL_RULES[rule](ctx)
+    raise ValueError(f"ball {ball.get('id')!r} has neither a known rule nor a rate")
 
 
 def x_value(

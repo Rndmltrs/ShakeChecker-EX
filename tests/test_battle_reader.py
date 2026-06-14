@@ -4,7 +4,7 @@ from pathlib import Path
 import cv2
 import pytest
 
-from battle_reader import BattleState, load_calibration, read_battle
+from battle_reader import BattleState, is_battle_ui_present, load_calibration, read_battle
 
 ROOT = Path(__file__).parent.parent
 FIXTURES = ROOT / "fixtures"
@@ -55,3 +55,26 @@ def test_status(name, exp):
     assert len(reading.bars) == len(exp["enemies"])
     for bar, enemy in zip(reading.bars, exp["enemies"], strict=True):
         assert bar.status.value == enemy["status"]
+
+
+CHAT_MIN = sorted(EXPECTED["chat_minimized_fixtures"].items())
+
+
+@pytest.mark.parametrize(("name", "exp"), CHAT_MIN, ids=[n for n, _ in CHAT_MIN])
+def test_hp_bar_visibility_after_animation(name, exp):
+    # The chat-independent turn fallback relies on detecting when the enemy HP
+    # bar is present vs hidden by the attack animation.
+    img = cv2.imread(str(FIXTURES / name))
+    assert img is not None, f"missing fixture {name}"
+    assert bool(read_battle(img, CAL).bars) is exp["bar_visible"]
+
+
+BATTLE_SCENES = {"wild_single", "wild_double", "trainer"}
+
+
+@pytest.mark.parametrize(("name", "exp"), CASES, ids=IDS)
+def test_battle_ui_presence(name, exp):
+    # The command panel marks a battle; overworld and login screen have none.
+    img = cv2.imread(str(FIXTURES / name))
+    expected_present = exp["scene"] in BATTLE_SCENES
+    assert is_battle_ui_present(img, CAL.battle_ui) is expected_present

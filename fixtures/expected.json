@@ -179,6 +179,79 @@
         { "name": "Tentacool", "level": 24, "hp_pct": 100.0, "hp_color": "green", "status": "none" }
       ],
       "notes": "1920x1080 client resolution; battle UI elements keep their fixed pixel size (bar still 218 px)."
+    },
+    "login_screen.png": {
+      "scene": "login",
+      "location": null,
+      "overlay_visible": false,
+      "enemies": [],
+      "notes": "PokeMMO login screen (dark Zekrom over a light backdrop). Has no enemy HP bar; must NOT be detected as a battle even though dark pixels exist in the bottom region."
+    }
+  },
+  "_action_fixtures_note": "Single battle frames captured at the moment an action resolves, for the turn counter (milestone 2). A turn is counted only when a committed-action textbox appears (not when the menu merely closes, e.g. BAG -> cancel). Battle text shows bottom-left of the viewport. Filenames keep the user's spelling ('batle_').",
+  "action_fixtures": {
+    "batle_action_attack_selected.png": {
+      "action": "attack",
+      "battle_text": "Monferno used Ember!",
+      "ends_battle": false
+    },
+    "batle_action_item_selected.png": {
+      "action": "item",
+      "battle_text": "IronPixxelX used the Ether (PP).",
+      "ends_battle": false
+    },
+    "batle_action_pokemon_switch.png": {
+      "action": "switch",
+      "battle_text": "Monferno, OK! Come back!",
+      "ends_battle": false
+    },
+    "batle_action_pokeball_thrown.png": {
+      "action": "ball",
+      "battle_text": null,
+      "ends_battle": false,
+      "notes": "Pokeball mid-throw animation; no textbox in this frame."
+    },
+    "batle_action_run_selected.png": {
+      "action": "run",
+      "battle_text": "Got away safely!",
+      "ends_battle": true,
+      "notes": "Fleeing actively ends the battle."
+    }
+  },
+  "_chat_minimized_note": "Battle frames captured right after an attack animation with the chat minimized, at different window sizes. These show the in-viewport narration textbox (which would be the only turn cue with the chat hidden) and confirm the HP-bar vanish/return behaviour: during the zoom/attack animation the enemy HP bar is gone (frame 1), and it reappears just after (frames 2-4). The turn counter's chat-independent fallback keys on that vanish/return cycle. 'bar_visible' is whether read_enemy_bars should find the enemy HP bar in this exact frame.",
+  "chat_minimized_fixtures": {
+    "batle_action_attack_chat_minimized_1.png": {
+      "battle_text": "Lucario used Aura Sphere!",
+      "bar_visible": false,
+      "notes": "Mid attack animation; HP bar hidden."
+    },
+    "batle_action_attack_chat_minimized_2.png": {
+      "battle_text": "It's super effective!",
+      "bar_visible": true,
+      "enemy": "Marill"
+    },
+    "batle_action_attack_chat_minimized_3.png": {
+      "battle_text": "Roserade used Toxic Spikes!",
+      "bar_visible": true,
+      "enemy": "Krokorok"
+    },
+    "batle_action_attack_chat_minimized_4.png": {
+      "battle_text": "Roserade used Venoshock!",
+      "bar_visible": true,
+      "enemy": "Krokorok"
+    }
+  },
+  "_catch_fixtures_note": "Frames from a successful capture. The catch is detected from the chat log line 'Gotcha! X was caught!' (read_chat.caught), which also ends the battle once the enemy bar is gone.",
+  "catch_fixtures": {
+    "batle_action_pokemon_catched_dark_pokeballpng.png": {
+      "phase": "ball_on_field",
+      "caught_text": false,
+      "notes": "Pokeball resting on the field; enemy sprite replaced by the ball, enemy HP bar still shown, no catch text yet."
+    },
+    "batle_action_pokemon_catched_text_after pokeball_disapeared.png": {
+      "phase": "caught_confirmed",
+      "caught_text": true,
+      "notes": "In-viewport and chat show 'Gotcha! ... was caught!'."
     }
   }
 }

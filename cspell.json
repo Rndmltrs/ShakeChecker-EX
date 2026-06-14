@@ -33,6 +33,7 @@
     "Onix",
     "Pachirisu",
     "Ponyta",
+    "Roselia",
     "Roserade",
     "Rotom",
     "Smeargle",
@@ -95,6 +96,11 @@
     "Fangwahrscheinlichkeit",
     "Рokе",
     "colour",
-    "colours"
+    "colours",
+    "textbox",
+    "letterboxed",
+    "Vmean",
+    "pokeballs",
+    "mult"
   ]
 }

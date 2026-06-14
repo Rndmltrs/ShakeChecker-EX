@@ -3,10 +3,13 @@ from pathlib import Path
 
 import pytest
 
-from catch_calc import catch_probability, x_value
+from catch_calc import BattleContext, ball_multiplier, catch_probability, x_value
 
 DATA = Path(__file__).parent.parent / "src" / "data"
-BALLS = {b["id"]: b["rate"] for b in json.loads((DATA / "balls.json").read_text("utf-8"))["balls"]}
+BALL_LIST = json.loads((DATA / "balls.json").read_text("utf-8"))["balls"]
+BALLS_BY_ID = {b["id"]: b for b in BALL_LIST}
+# flat-rate balls only (conditional ones have no static rate)
+BALLS = {b["id"]: b["rate"] for b in BALL_LIST if "rate" in b}
 STATUS = json.loads((DATA / "status_rates.json").read_text("utf-8"))["rates"]
 
 
@@ -72,3 +75,74 @@ def test_invalid_inputs_raise():
         x_value(1.5, 45)
     with pytest.raises(ValueError):
         x_value(1.0, 0)
+
+
+# --- conditional ball multipliers (ported from c4vv/CatchCalc pokeballs.js) ---
+
+
+def mult(ball_id: str, ctx: BattleContext) -> float:
+    return ball_multiplier(BALLS_BY_ID[ball_id], ctx)
+
+
+def test_flat_balls_ignore_context():
+    ctx = BattleContext(turns_completed=5, enemy_types=("water",), enemy_level=3)
+    assert mult("poke", ctx) == 1.0
+    assert mult("great", ctx) == 1.5
+    assert mult("ultra", ctx) == 2.0
+    assert mult("heal", ctx) == 1.25
+
+
+def test_dream_ball_scales_with_sleep_turns():
+    # pokemmo.help: 0-3 turns asleep -> 1x..4x. NOT a flat 4x.
+    assert mult("dream", BattleContext(turns_asleep=0)) == 1.0
+    assert mult("dream", BattleContext(turns_asleep=1)) == 2.0
+    assert mult("dream", BattleContext(turns_asleep=3)) == 4.0
+    assert mult("dream", BattleContext(turns_asleep=9)) == 4.0  # capped
+
+
+def test_luxury_is_one_not_two():
+    # corrected from the Hub's 2.0; Luxury affects friendship, not catch rate
+    assert mult("luxury", BattleContext()) == 1.0
+
+
+def test_repeat_placeholder_is_one():
+    assert mult("repeat", BattleContext(already_caught=True)) == 1.0
+
+
+def test_quick_ball_first_turn_only():
+    assert mult("quick", BattleContext(turns_completed=0)) == 5.0
+    assert mult("quick", BattleContext(turns_completed=1)) == 1.0
+    assert mult("quick", BattleContext(turns_completed=9)) == 1.0
+
+
+def test_timer_ball_ramps_and_caps():
+    assert mult("timer", BattleContext(turns_completed=0)) == pytest.approx(1.0)
+    assert mult("timer", BattleContext(turns_completed=1)) == pytest.approx(1.3)
+    assert mult("timer", BattleContext(turns_completed=5)) == pytest.approx(2.5)
+    assert mult("timer", BattleContext(turns_completed=10)) == pytest.approx(4.0)  # capped
+    assert mult("timer", BattleContext(turns_completed=99)) == pytest.approx(4.0)
+
+
+def test_net_ball_water_or_bug_only():
+    assert mult("net", BattleContext(enemy_types=("WATER", "FLYING"))) == 3.5
+    assert mult("net", BattleContext(enemy_types=("Bug", "Poison"))) == 3.5
+    assert mult("net", BattleContext(enemy_types=("Normal",))) == 1.0
+    assert mult("net", BattleContext(enemy_types=())) == 1.0
+
+
+def test_nest_ball_level_curve():
+    assert mult("nest", BattleContext(enemy_level=1)) == pytest.approx(4.0)  # capped at 4
+    assert mult("nest", BattleContext(enemy_level=16)) == pytest.approx(4.0)  # 7-3=4
+    assert mult("nest", BattleContext(enemy_level=21)) == pytest.approx(3.0)  # 7-4=3
+    assert mult("nest", BattleContext(enemy_level=40)) == pytest.approx(1.0)  # floor
+    assert mult("nest", BattleContext(enemy_level=99)) == pytest.approx(1.0)
+
+
+def test_dusk_ball_condition():
+    assert mult("dusk", BattleContext(dusk_active=True)) == 2.5
+    assert mult("dusk", BattleContext(dusk_active=False)) == 1.0
+
+
+def test_unknown_rule_raises():
+    with pytest.raises(ValueError):
+        ball_multiplier({"id": "weird", "rule": "nonexistent"}, BattleContext())

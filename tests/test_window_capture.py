@@ -22,16 +22,17 @@ def test_fold_confusables_maps_homoglyphs_to_ascii():
     assert fold_confusables("PokeMMO") == "PokeMMO"  # ASCII unchanged
 
 
-def test_title_matches_accepts_ascii_and_homoglyphs():
+def test_title_matches_accepts_exact_ascii_and_homoglyphs():
     assert title_matches("PokeMMO")
-    assert title_matches("PokeMMO - 1.2.3")
+    assert title_matches("PokeMMO ")  # trailing whitespace tolerated
     assert title_matches(HOMOGLYPH_TITLE)
 
 
 def test_title_matches_rejects_non_game_windows():
-    # Chrome tabs that merely contain "PokeMMO" in the middle must not match
+    # Browser tabs that merely START with or contain "PokeMMO" must not match
+    assert not title_matches("PokeMMO Help - Google Chrome")
+    assert not title_matches("pokemmo infernape best build - Google Suche - Google Chrome")
     assert not title_matches("(17) ... - PokeMMO Stream Recap - YouTube - Google Chrome")
-    assert not title_matches("ghostpixxel/ShakeChecker: ... overlay for PokeMMO ... - Chrome")
     assert not title_matches("Pokémon-Mod mit Fangwahrscheinlichkeit - Claude - Google Chrome")
     assert not title_matches("Visual Studio Code")
 
