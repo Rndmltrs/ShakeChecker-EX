@@ -32,7 +32,6 @@ from battle_reader import (
     BattleTextReader,
     Calibration,
     Status,
-    is_battle_ui_present,
     is_trainer_battle,
     load_calibration,
     read_battle,
@@ -65,10 +64,10 @@ TEMPLATES_DIR = DATA / "templates"
 WAITING_POLL_S = 2.0
 IDLE_FRAME_S = 0.5  # ~2 fps
 BATTLE_FRAME_S = 0.2  # ~5 fps
-# Battle membership follows the battle command panel (see is_battle_ui_present),
-# which is stable through intro/animations. Only end the battle once that panel
-# has been gone continuously for this long (covers fade-out transitions).
-BATTLE_END_GRACE_S = 1.5
+# End the battle once the battle-specific signals (enemy bar + menu/action/catch
+# templates) have all been gone this long — covers brief animation gaps without
+# lingering too long after a faint/flee.
+BATTLE_END_GRACE_S = 2.0
 
 
 class AppState(enum.Enum):
@@ -301,17 +300,19 @@ class LiveLoop:
         now = time.monotonic()
         reading = read_battle(frame, self.cal)
         has_bar = reading.state in (BattleState.SINGLE, BattleState.MULTI)
-        # Enter a battle only when an enemy HP bar is actually detected (the login
-        # screen / menus have a dark bottom panel too). Once in battle, the panel
-        # keeps us in through intro/attack animations when the bar momentarily
-        # vanishes.
-        panel = is_battle_ui_present(frame, self.cal.battle_ui)
+        # Membership uses battle-SPECIFIC signals only: the enemy HP bar plus the
+        # menu/action/catch templates. (The old dark-panel signal false-positives
+        # in a dark CAVE overworld, so the battle never ended there.) During an
+        # attack animation the bar vanishes but the "X used Y!" text shows; brief
+        # gaps are covered by the end grace.
+        bt = self.battle_text.read(frame)
+        in_battle = has_bar or bt.menu_present or bt.action or bt.caught
 
-        if has_bar or (self.state is AppState.BATTLE and panel):
+        if in_battle:
             self.last_seen_battle = now
             if self.state is not AppState.BATTLE:
                 self._enter_battle()
-            self._battle_step(frame, reading, client_rect)
+            self._battle_step(frame, reading, bt, client_rect)
         elif self.state is AppState.BATTLE and now - self.last_seen_battle > BATTLE_END_GRACE_S:
             self.state = AppState.IDLE
             self.last_line = ""
@@ -339,7 +340,7 @@ class LiveLoop:
         self._trainer_decided = False
         print("battle detected")
 
-    def _battle_step(self, frame, reading, rect) -> None:
+    def _battle_step(self, frame, reading, bt, rect) -> None:
         # Read the location once per battle (it never changes mid-battle) to set
         # the Dusk Ball cave boost. Retry until a non-empty name is read (the first
         # battle frame can be mid-transition).
@@ -364,10 +365,9 @@ class LiveLoop:
             if self.debug and self.turns.turns_completed > before:
                 print(f"[dbg] chat -> turn {self.turns.turns_completed + 1} (read {chat_turn})")
 
-        # Template-match the in-viewport text box EVERY frame (~10 ms): drives the
-        # chat-independent turn counter (command menu reappears each turn) and catch
-        # detection ("Gotcha!"). See [battle_text] / BattleTextReader.
-        bt = self.battle_text.read(frame)
+        # `bt` (menu/action/catch templates, ~10 ms) was read in the loop and is
+        # passed in: it drives the chat-independent turn counter (command menu
+        # reappears each turn) and catch detection ("Gotcha!").
         before = self.turns.turns_completed
         self.turns.observe_menu(bt.menu_present, bt.action)
         # Decide trainer vs wild ONCE per battle, and only while the command menu is
