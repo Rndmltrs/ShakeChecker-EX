@@ -13,15 +13,17 @@ width_tolerance_px = 8
 # the empty-part check (full_health_*.png: run == 218).
 full_fill_min_px = 206
 
-# Search region for enemy HP bars, relative to the captured frame.
-# Enemy bars sit top-left: y=200/1432=0.14, x=345/1996=0.17 in the Eterna and
-# cave fixtures; y=184/1077=0.17 in 1920x1080_resolution.png. Ally bars sit at
-# x>=0.70 (full_health_water.png) and stay outside search_right; scenery false
-# positives below 0.30 height (yellow_health_sleeping_cave.png) are excluded.
+# Search region for enemy HP bars, relative to the captured frame. Spans the full
+# top band: a single enemy sits top-left (y=200/1432=0.14, x=0.17) but HORDE bars
+# run horizontally across the top (horde_triple_wild_encounter.png: three bars at
+# y=199, x=0.32/0.45/0.58), so the last surviving horde mon can be anywhere. The
+# player's own bar sits lower (y~0.45) and stays below search_bottom. NB the bar
+# is at a FIXED pixel y (~200), so search_bottom must stay generous enough to
+# include it on short windows (200/895=0.22 in batle_action_attack_chat_minimized_3).
 search_top = 0.0
 search_bottom = 0.30
-search_left = 0.05
-search_right = 0.50
+search_left = 0.03
+search_right = 0.97
 
 # Fill blob geometry: bar fill is 3-6 px tall in all fixtures (10x6 px in
 # red_health_no_status_cave.png); window-toolbar icons, status badges and
@@ -30,9 +32,12 @@ min_fill_height_px = 3
 max_fill_height_px = 8
 min_fill_width_px = 2
 
-# Two stacked enemy bars are 46 px apart (double_battle_no_status.png);
-# detections closer than this in y are merged as one bar.
+# Duplicate blobs of ONE bar resolve to the same fill run (same x) and y; merge
+# only when BOTH are within these gaps. Two stacked enemy bars are 46 px apart in
+# y (double_battle_no_status.png); horde bars are ~280 px apart in x — both stay
+# unmerged so the bar count is right.
 merge_y_px = 10
+merge_x_px = 30
 
 [hp_bar.hsv]
 # OpenCV HSV (H 0-179). Saturation/value floors separate the bar fill from
@@ -99,6 +104,31 @@ magenta = [140, 175]
 red = [0, 12]
 cyan = [85, 99]
 
+[location]
+# Top-left HUD location line ("Wayward Cave Ch. 2"). OCR'd to decide if the area
+# is a cave (Dusk Ball boost). Spans from the very top so it works whether the
+# capture includes the OS title bar (fixtures) or is the client area only (live,
+# where the HUD sits higher). Extra captured text (e.g. the title) is harmless --
+# cave-ness is decided by keywords. Verified on Eterna Forest / Victory Road /
+# Route 41 / Floaroma Town fixtures; the " Ch. N" suffix is stripped in code.
+top = 0.0
+bottom = 0.065
+left = 0.0
+right = 0.18
+upscale = 3
+
+[trainer]
+# Trainer battles show a party indicator — six small icons (grey circles / Poke
+# balls / Pokemon icons) — in a fixed strip just below the enemy HP bar, which
+# wild battles lack. Detect it by edge density (Canny) in that strip, relative to
+# the bar's (x, y). Measured: trainer fixtures (full_health_trainer_battle_*) ->
+# edge_frac ~0.01-0.03; EVERY wild fixture -> exactly 0.000, so the threshold has
+# a wide margin. width_px matches the bar inner width (218).
+dy0 = 20
+dy1 = 60
+width_px = 218
+edge_frac_min = 0.004
+
 [battle_ui]
 # Authoritative "in a battle" signal: the battle screen has a uniform dark
 # command panel along the bottom of the viewport (action menu / move list /
@@ -128,31 +158,32 @@ right = 0.40
 upscale = 2
 
 [battle_text]
-# The in-viewport text area at the bottom of the centered battle viewport. The
-# SAME region shows, at different times: the command menu (FIGHT/BAG/POKEMON/RUN),
-# the move submenu, and the narration box ("Gotcha! / X was caught!", "X used Y!",
-# "X fainted!"). One OCR of this band drives BOTH the chat-independent turn counter
-# (command-menu presence) and catch detection.
+# The in-viewport text area at the bottom of the centered battle viewport, which
+# shows the command menu (FIGHT/BAG/POKEMON/RUN) and the catch banner ("Gotcha!").
+# Detected by TEMPLATE MATCHING (data/templates/menu_fight.png, catch_gotcha.png),
+# not OCR: the UI is fixed pixel size so the words are the same size in every
+# native capture, and matching is ~10 ms vs >1 s for OCR -- so it runs every frame
+# and the turn/catch react instantly.
 #
-# Why here and not the chat log (bottom-left): this box belongs to the CURRENT
-# frame, whereas the chat log lags ~1s -- at the moment a Pokemon is caught the
-# chat still shows the PREVIOUS battle's catch line. This band also sits ABOVE the
-# chat (y < 0.82 < chat's 0.90), so the chat's stale catch line cannot leak in.
-#
-# Band must cover the viewport bottom across window aspect ratios: the menu reads
-# at y 0.65-0.75 in ~1.39 windows (full_health_no_status) but 0.52-0.61 in 16:9
-# (1920x1080_resolution.png) because the viewport is letterboxed higher. Verified:
-# all 4 menu keywords detected in both, the catch banner detected
-# (batle_action_pokemon_catched_*), and NO false menu on the move submenu
-# (two_third_green_health_cave), action textbox, catch, or overworld.
+# Band must cover the viewport bottom across window aspect ratios (menu at y
+# 0.65-0.75 in ~1.39 windows, 0.52-0.61 in 16:9); it also sits ABOVE the chat
+# (y < 0.82 < 0.90). Verified scores: menu present 0.98-1.0 vs 0.29-0.36 absent;
+# catch 1.0 vs <=0.63 absent -- so 0.72 separates both with margin.
 top = 0.48
 bottom = 0.82
 left = 0.04
 right = 0.60
-upscale = 2
-# Command menu confirmed when at least this many of FIGHT/BAG/POKEMON/RUN are read
-# (>=2 avoids a stray single-word false positive; the move list shows none).
-menu_keywords_min = 2
+menu_match_min = 0.72
+# catch ("Gotcha!") must NOT fire on a switch's "Go! Y!" (shares "Go", ~0.77) --
+# the real banner scores 1.0, so 0.85 separates it. A false catch would latch the
+# overlay and never end the battle.
+catch_match_min = 0.85
+# A committed action's narration confirms a real turn (so a bag/Pokemon browse
+# opened and cancelled does NOT advance it). Two templates: "used" ("X used Y!",
+# incl. the enemy's counter each turn) and "Go!" (sending a Pokemon on a switch).
+# Higher threshold because "Go!" must not match "Got away"/"Gotcha" (those ~0.77);
+# the real words score 1.0, so 0.85 separates cleanly.
+action_match_min = 0.85
 
 [name]
 # Enemy name region: right of the status badge, above the bar. Relative to the
