@@ -2,7 +2,17 @@ from __future__ import annotations
 
 import pytest
 
-from overlay import Overlay, phys_to_logical, prob_color_hex, status_badge, subheader_text
+from overlay import (
+    BASE_PANEL_W,
+    MIN_SCALE,
+    REF_WINDOW_HEIGHT,
+    Overlay,
+    phys_to_logical,
+    prob_color_hex,
+    scale_for_window,
+    status_badge,
+    subheader_text,
+)
 
 # --- pure helpers (no Qt) ---
 
@@ -18,6 +28,13 @@ def test_prob_color_thresholds():
 
 def test_subheader_text():
     assert subheader_text(75, 2) == "Rate: 75  ·  Turn 2"
+
+
+def test_scale_for_window_caps_at_one_and_floors():
+    assert scale_for_window(REF_WINDOW_HEIGHT) == 1.0
+    assert scale_for_window(REF_WINDOW_HEIGHT * 2) == 1.0  # never grows past 1.0
+    assert scale_for_window(round(REF_WINDOW_HEIGHT * 0.8)) == 0.8  # shrinks below ref
+    assert scale_for_window(10) == MIN_SCALE  # clamped to the floor
 
 
 # --- widget smoke tests (need a QApplication) ---
@@ -107,6 +124,15 @@ def test_static_species_clears_movie(qt_app):
     ov.show_battle(1, "Bulbasaur", 45, 1, {})  # animated -> movie set
     ov.show_battle(1000, "GenSix", 50, 1, {})  # static png -> movie cleared
     assert ov._movie is None
+
+
+def test_apply_scale_shrinks_panel_and_caps(qt_app):
+    ov = Overlay(BALLS)
+    assert ov._panel_w == BASE_PANEL_W  # starts at full size
+    ov.apply_scale(0.8)
+    assert ov._panel_w == round(BASE_PANEL_W * 0.8)
+    ov.apply_scale(2.0)  # capped at 1.0 -> back to full, never larger
+    assert ov._panel_w == BASE_PANEL_W
 
 
 def test_phys_to_logical_scales_by_dpr(qt_app):

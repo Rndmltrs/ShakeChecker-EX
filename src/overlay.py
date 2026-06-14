@@ -1,9 +1,13 @@
 """PyQt6 catch-rate overlay: frameless, translucent, click-through, always-on-top.
 
-Layout (top to bottom): animated Pokemon sprite + name; base catch rate + turn;
-one row per Poke Ball = ball sprite + catch %, the % coloured by likelihood
-(<30% red, 30-60% yellow, >60% green). Hidden outside battles. Docks to the
-top-right inside the game window's client area.
+Layout (top to bottom): Pokemon sprite + name (+ level / status badge); base
+catch rate + turn; HP; one row per Poke Ball = sprite + name + catch %, the %
+coloured by likelihood (<35% red, 35-66% yellow, >=66% green). Hidden outside
+battles. Docks to the top corner inside the game window's client area.
+
+Sizes are expressed at scale 1.0 (the maximum) and shrunk by apply_scale() when
+the game window is small, so the overlay never overflows a small battle view and
+never grows larger than its design size.
 
 Read-only: the overlay only displays. Click-through means input passes straight
 to the game underneath; the overlay never receives or sends any input.
@@ -20,30 +24,30 @@ from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayou
 
 from sprite_loader import SpriteLoader
 
+# Base (scale 1.0) sizes in logical px. apply_scale() multiplies these; 1.0 is the
+# cap, so the overlay is never larger than this.
+BASE_PANEL_W = 210  # fits the widest obtainable name + " Lv.100" at 16px bold
+BASE_SPRITE_H = 24
+BASE_BALL_H = 20
+BASE_NAME_PX = 16
+BASE_SUB_PX = 13
+BASE_ROW_PX = 13
+BASE_STATUS_PX = 10
+BASE_LEVEL_PX = 11
+BASE_MARGIN_X = 12
+BASE_MARGIN_Y = 10
+BASE_COL_SPACING = 4
+BASE_HEADER_SPACING = 8
+BASE_ROW_SPACING = 6
+BASE_PCT_MINW = 48
+DOCK_MARGIN = 12  # gap from the game window's corner
+DOCK_SIDE = "left"  # "left" or "right"
 
-def phys_to_logical(px: int, py: int) -> tuple[int, int]:
-    """Convert a physical-pixel screen point (from win32) to Qt's logical-pixel
-    coordinates, which move() expects. They differ when Windows display scaling
-    is not 100%; without this the overlay lands on the wrong monitor. Uses the
-    target screen's device pixel ratio (refined from the primary's first guess),
-    which is exact for uniform scaling and close for mixed-DPI setups."""
-    primary = QGuiApplication.primaryScreen()
-    dpr = primary.devicePixelRatio() if primary else 1.0
-    lx, ly = px / dpr, py / dpr
-    screen = QGuiApplication.screenAt(QPoint(round(lx), round(ly)))
-    if screen is not None and screen.devicePixelRatio() != dpr:
-        dpr = screen.devicePixelRatio()
-        lx, ly = px / dpr, py / dpr
-    return round(lx), round(ly)
-
-SPRITE_H = 24  # Pokemon sprite height (px) — kept compact so the panel stays small
-BALL_H = 20  # ball icon height (px)
-# Fixed panel width. Must exceed the content's natural width or Qt enforces a
-# larger, content-dependent minimum and the dock position jitters frame to frame.
-# Sized (QFontMetrics) to fit the widest obtainable name + " Lv.100" at 16px bold
-# ("Charmander" -> 206px); a few px spare. So real species names never clip.
-PANEL_W = 210
-DOCK_MARGIN = 12  # gap from the game window's top-right corner
+# Window-height (physical px) at/above which the overlay is at full size, and the
+# smallest scale it will shrink to. Below REF the overlay scales down with the
+# window so it stays inside a small battle view.
+REF_WINDOW_HEIGHT = 1400
+MIN_SCALE = 0.6
 
 # probability colour thresholds (fraction 0-1) -> hex
 _RED, _YELLOW, _GREEN = "#ff5555", "#ffcc44", "#55dd66"
@@ -62,6 +66,11 @@ def subheader_text(catch_rate: int, turn: int) -> str:
     return f"Rate: {catch_rate}  ·  Turn {turn}"
 
 
+def scale_for_window(height_px: int) -> float:
+    """Overlay scale for a game-window client height: 1.0 (the cap) down to MIN_SCALE."""
+    return max(MIN_SCALE, min(1.0, height_px / REF_WINDOW_HEIGHT))
+
+
 # Status code -> (label, badge background) following the in-game colour scheme.
 _STATUS_BADGE = {
     "slp": ("SLP", "#7a7a7a"),
@@ -77,6 +86,22 @@ def status_badge(status: str | None) -> tuple[str, str] | None:
     return _STATUS_BADGE.get(status.lower()) if status else None
 
 
+def phys_to_logical(px: int, py: int) -> tuple[int, int]:
+    """Convert a physical-pixel screen point (from win32) to Qt's logical-pixel
+    coordinates, which move() expects. They differ when Windows display scaling
+    is not 100%; without this the overlay lands on the wrong monitor. Uses the
+    target screen's device pixel ratio (refined from the primary's first guess),
+    which is exact for uniform scaling and close for mixed-DPI setups."""
+    primary = QGuiApplication.primaryScreen()
+    dpr = primary.devicePixelRatio() if primary else 1.0
+    lx, ly = px / dpr, py / dpr
+    screen = QGuiApplication.screenAt(QPoint(round(lx), round(ly)))
+    if screen is not None and screen.devicePixelRatio() != dpr:
+        dpr = screen.devicePixelRatio()
+        lx, ly = px / dpr, py / dpr
+    return round(lx), round(ly)
+
+
 class Overlay(QWidget):
     def __init__(self, ball_names: list[str], loader: SpriteLoader | None = None) -> None:
         super().__init__()
@@ -84,9 +109,16 @@ class Overlay(QWidget):
         self._movie: QMovie | None = None
         self._current_dex: int | None = None  # avoid restarting the GIF every frame
         self._last_pos: tuple[int, int] | None = None  # avoid redundant moves
+        self._ball_names = list(ball_names)
+        self._ball_icons: dict[str, QLabel] = {}
+        self._ball_name_labels: dict[str, QLabel] = {}
         self._pct_labels: dict[str, QLabel] = {}
+        self._row_layouts: list[QHBoxLayout] = []
+        self._scale = 0.0  # forces the first apply_scale to size everything
+        self._panel_w = BASE_PANEL_W
+        self._sprite_h = BASE_SPRITE_H
+        self._level_px = BASE_LEVEL_PX
 
-        self.setFixedWidth(PANEL_W)
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
@@ -96,8 +128,8 @@ class Overlay(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
 
-        mono = QFont("Consolas")
-        mono.setStyleHint(QFont.StyleHint.Monospace)
+        self._mono = QFont("Consolas")
+        self._mono.setStyleHint(QFont.StyleHint.Monospace)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -107,81 +139,110 @@ class Overlay(QWidget):
             " QLabel { color: #eeeeee; background: transparent; }"
         )
         root.addWidget(panel)
-        col = QVBoxLayout(panel)
-        col.setContentsMargins(12, 10, 12, 10)
-        col.setSpacing(4)
+        self._col = QVBoxLayout(panel)
 
-        # header: sprite + name
-        header = QHBoxLayout()
-        header.setSpacing(8)
+        # header: sprite + name (+ status badge)
+        self._header = QHBoxLayout()
         self._sprite = QLabel()
-        self._sprite.setFixedHeight(SPRITE_H)
         self._sprite.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
         self._name = QLabel("—")
-        name_font = QFont(mono)
-        name_font.setPixelSize(16)
-        name_font.setBold(True)
-        self._name.setFont(name_font)
         self._name.setTextFormat(Qt.TextFormat.RichText)  # bold name + small "Lv.N"
-        # Ignored width: a long name clips instead of widening the panel (which
-        # would make the right-anchored dock position jump).
+        # Ignored width: a long name clips instead of widening the panel.
         self._name.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self._status = QLabel()
-        status_font = QFont(mono)
-        status_font.setPixelSize(10)
-        status_font.setBold(True)
-        self._status.setFont(status_font)
         self._status.setVisible(False)
-        header.addWidget(self._sprite)
-        header.addWidget(self._name, 1)
-        header.addWidget(self._status)
-        col.addLayout(header)
+        self._header.addWidget(self._sprite)
+        self._header.addWidget(self._name, 1)
+        self._header.addWidget(self._status)
+        self._col.addLayout(self._header)
 
-        # subheader: catch rate + turn
         self._sub = QLabel(subheader_text(0, 1))
-        sub_font = QFont(mono)
-        sub_font.setPixelSize(13)
-        self._sub.setFont(sub_font)
         self._sub.setStyleSheet("color: #aaaaaa;")
         self._sub.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        col.addWidget(self._sub)
+        self._col.addWidget(self._sub)
 
-        # HP line (its own row, above the balls)
         self._hp = QLabel("")
-        self._hp.setFont(sub_font)
         self._hp.setStyleSheet("color: #cfd2d6;")
         self._hp.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        col.addWidget(self._hp)
+        self._col.addWidget(self._hp)
 
         line = QFrame()
         line.setFrameShape(QFrame.Shape.HLine)
         line.setStyleSheet("color: rgba(255,255,255,40);")
-        col.addWidget(line)
+        self._col.addWidget(line)
 
         # one row per ball: icon + name (left) + percent (right)
-        row_font = QFont(mono)
-        row_font.setPixelSize(13)
-        for name in ball_names:
+        for name in self._ball_names:
             row = QHBoxLayout()
-            row.setSpacing(6)
             icon = QLabel()
-            icon.setPixmap(self._loader.ball_pixmap(name, BALL_H))
-            icon.setFixedHeight(BALL_H)
             label = QLabel(name)
-            label.setFont(row_font)
             label.setStyleSheet("color: #cfd2d6;")
             pct = QLabel("—")
-            pct.setFont(row_font)
             pct.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            pct.setMinimumWidth(48)
             row.addWidget(icon)
             row.addWidget(label)
             row.addStretch(1)
             row.addWidget(pct)
-            col.addLayout(row)
+            self._col.addLayout(row)
+            self._row_layouts.append(row)
+            self._ball_icons[name] = icon
+            self._ball_name_labels[name] = label
             self._pct_labels[name] = pct
 
+        self.apply_scale(1.0)  # set fonts, sprites, widths at full size
+
     # --- public API ---
+
+    def apply_scale(self, scale: float) -> None:
+        """Resize the whole overlay by `scale` (<=1.0). Cheap no-op if unchanged."""
+        scale = max(MIN_SCALE, min(1.0, scale))
+        if abs(scale - self._scale) < 0.02:
+            return
+        self._scale = scale
+
+        def px(base: float) -> int:
+            return max(1, round(base * scale))
+
+        self._panel_w = px(BASE_PANEL_W)
+        self.setFixedWidth(self._panel_w)
+        self._sprite_h = px(BASE_SPRITE_H)
+        self._level_px = px(BASE_LEVEL_PX)
+
+        name_font = self._font(px(BASE_NAME_PX), bold=True)
+        row_font = self._font(px(BASE_ROW_PX))
+        sub_font = self._font(px(BASE_SUB_PX))
+        status_font = self._font(px(BASE_STATUS_PX), bold=True)
+        self._name.setFont(name_font)
+        self._sub.setFont(sub_font)
+        self._hp.setFont(sub_font)
+        self._status.setFont(status_font)
+
+        self._sprite.setFixedHeight(self._sprite_h)
+        ball_h = px(BASE_BALL_H)
+        for ball, icon in self._ball_icons.items():
+            icon.setPixmap(self._loader.ball_pixmap(ball, ball_h))
+            icon.setFixedHeight(ball_h)
+        for label in self._ball_name_labels.values():
+            label.setFont(row_font)
+        for pct in self._pct_labels.values():
+            pct.setFont(row_font)
+            pct.setMinimumWidth(px(BASE_PCT_MINW))
+
+        self._col.setContentsMargins(
+            px(BASE_MARGIN_X), px(BASE_MARGIN_Y), px(BASE_MARGIN_X), px(BASE_MARGIN_Y)
+        )
+        self._col.setSpacing(px(BASE_COL_SPACING))
+        self._header.setSpacing(px(BASE_HEADER_SPACING))
+        for row in self._row_layouts:
+            row.setSpacing(px(BASE_ROW_SPACING))
+
+        # reload the current sprite at the new size and force a re-dock
+        if self._current_dex is not None:
+            dex = self._current_dex
+            self._current_dex = None
+            self._set_sprite(dex)
+        self.adjustSize()
+        self._last_pos = None
 
     def show_battle(
         self,
@@ -196,7 +257,11 @@ class Overlay(QWidget):
     ) -> None:
         """Update the overlay for the current enemy and show it."""
         self._set_sprite(dex_id)
-        lvl = f' <span style="font-size:11px; color:#9aa0aa;">Lv.{level}</span>' if level else ""
+        lvl = (
+            f' <span style="font-size:{self._level_px}px; color:#9aa0aa;">Lv.{level}</span>'
+            if level
+            else ""
+        )
         self._name.setText(f"{name}{lvl}")
         self._sub.setText(subheader_text(catch_rate, turn))
         self._hp.setText(f"HP: {hp_pct:.0f}%" if hp_pct is not None else "")
@@ -218,16 +283,27 @@ class Overlay(QWidget):
         self.hide()
 
     def dock_to(self, left: int, top: int, width: int) -> None:
-        """Place the overlay at the top-right inside a client rect (PHYSICAL screen
-        coords from win32). Convert to Qt logical coords (DPI scaling), anchor by
-        the constant PANEL_W, and only move on change so it cannot jitter."""
-        lx, ly = phys_to_logical(left + width, top)
-        pos = (lx - PANEL_W - DOCK_MARGIN, ly + DOCK_MARGIN)
+        """Dock to the top-left or top-right inside a client rect (PHYSICAL screen
+        coords from win32). Convert to Qt logical coords (DPI), anchor by the
+        constant panel width, and only move on change so it cannot jitter."""
+        if DOCK_SIDE == "left":
+            lx, ly = phys_to_logical(left, top)
+            x = lx + DOCK_MARGIN
+        else:
+            lx, ly = phys_to_logical(left + width, top)
+            x = lx - self._panel_w - DOCK_MARGIN
+        pos = (x, ly + DOCK_MARGIN)
         if pos != self._last_pos:
             self._last_pos = pos
             self.move(*pos)
 
     # --- internals ---
+
+    def _font(self, size_px: int, bold: bool = False) -> QFont:
+        f = QFont(self._mono)
+        f.setPixelSize(size_px)
+        f.setBold(bold)
+        return f
 
     def _set_status(self, status: str | None) -> None:
         badge = status_badge(status)
@@ -250,13 +326,13 @@ class Overlay(QWidget):
         if self._movie is not None:
             self._movie.stop()
             self._movie = None
-        movie = self._loader.species_movie(dex_id, SPRITE_H)
+        movie = self._loader.species_movie(dex_id, self._sprite_h)
         if movie is not None:
             self._movie = movie
             self._sprite.setMovie(movie)
             movie.start()
         else:
-            self._sprite.setPixmap(self._loader.species_pixmap(dex_id, SPRITE_H))
+            self._sprite.setPixmap(self._loader.species_pixmap(dex_id, self._sprite_h))
 
 
 def _demo() -> None:
@@ -271,7 +347,6 @@ def _demo() -> None:
 
     app = QApplication(sys.argv)
     ov = Overlay(balls)
-    # sample: Floatzel (dex 419), some made-up probabilities
     sample = {
         "Poké Ball": 0.098,
         "Great Ball": 0.147,

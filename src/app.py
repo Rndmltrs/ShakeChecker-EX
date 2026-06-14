@@ -38,7 +38,7 @@ from battle_reader import (
 from catch_calc import BattleContext, ball_multiplier, catch_probability
 from hp_settler import HpSettler
 from name_reader import NameReader
-from overlay import Overlay
+from overlay import Overlay, scale_for_window
 from status_settler import StatusSettler
 from turn_tracker import TurnTracker
 from window_capture import (
@@ -391,6 +391,7 @@ class LiveLoop:
                 hp_pct, self.cached["catch_rate"], self.status_rates[status], self.balls, ctx
             )
             line = f"[{turn_note}] " + format_line(self.cached["name"], hp_pct, status, probs)
+            self.overlay.apply_scale(scale_for_window(rect.height))
             self.overlay.show_battle(
                 self.cached.get("id", -1),
                 self.cached["name"],
