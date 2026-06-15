@@ -39,6 +39,7 @@ from battle_reader import (
     read_caught_icon,
 )
 from catch_calc import BattleContext, ball_multiplier, catch_probability
+from dex_panel import DexPanel
 from dex_session import DexSession, LocationView
 from dex_tracker import EncounterData, select_display
 from game_time import season_name
@@ -271,12 +272,14 @@ class LiveLoop:
         cal: Calibration,
         overlay: Overlay,
         dex: DexSession | None = None,
+        dex_panel: DexPanel | None = None,
     ) -> None:
         self.species_override = species_override
         self.status_override = status_override
         self.cal = cal
         self.overlay = overlay
         self.dex = dex  # None if the dex data couldn't be loaded
+        self.dex_panel = dex_panel  # overworld "missing here" overlay
         self.balls = load_balls()
         self.status_rates = load_status_rates()
         self.name_reader = None if species_override else NameReader(cal.name, SPECIES_PATH)
@@ -300,7 +303,7 @@ class LiveLoop:
         self._trainer_decided = False  # trainer vs wild settled this battle
         self._ot_checked = False  # enemy's OT-caught icon checked this battle
         self._last_loc_check = 0.0  # last IDLE location OCR (throttle)
-        self._dex_panel = ""  # last printed dex panel (dedup)
+        self._dex_log = ""  # last printed dex panel text (console dedup)
 
     def start(self) -> None:
         species_src = (
@@ -339,6 +342,8 @@ class LiveLoop:
                 self.state = AppState.WAITING
                 self.hwnd = None
                 self.overlay.hide_battle()
+                if self.dex_panel is not None:
+                    self.dex_panel.hide_panel()
             return WAITING_POLL_S
 
         frame = self.capture.grab(win_rect)
@@ -373,7 +378,14 @@ class LiveLoop:
         dex_due = now - self._last_loc_check >= DEX_LOC_INTERVAL_S
         if not in_battle and self.dex is not None and dex_due:
             self._last_loc_check = now
-            self._update_dex(read_location(frame, self.cal.location))
+            view = self._update_dex(read_location(frame, self.cal.location))
+            if self.dex_panel is not None:
+                if view is not None:
+                    self.dex_panel.apply_scale(scale_for_window(client_rect.height))
+                    self.dex_panel.show_here(view)
+                    self.dex_panel.dock_to(client_rect.left, client_rect.top, client_rect.width)
+                else:  # location not matched -> nothing useful to show
+                    self.dex_panel.hide_panel()
 
         return self._frame_interval()
 
@@ -392,6 +404,8 @@ class LiveLoop:
         self._is_trainer = False
         self._trainer_decided = False
         self._ot_checked = False
+        if self.dex_panel is not None:  # overworld panel out of the way during battle
+            self.dex_panel.hide_panel()
         print("battle detected")
 
     def _battle_step(self, frame, reading, bt, rect) -> None:
@@ -523,15 +537,17 @@ class LiveLoop:
             print(line)
             self.last_line = line
 
-    def _update_dex(self, hud_name: str) -> None:
-        """Refresh the 'missing here' panel from a HUD location name, printing it
-        only when it actually changes (location, region or list)."""
+    def _update_dex(self, hud_name: str) -> LocationView | None:
+        """Resolve the HUD location to a view and log the panel when it changes.
+        Returns the view (or None) so the caller can drive the overlay panel."""
         if self.dex is None or not hud_name:
-            return
-        panel = dex_panel_text(self.dex.on_location(hud_name))
-        if panel and panel != self._dex_panel:
+            return None
+        view = self.dex.on_location(hud_name)
+        panel = dex_panel_text(view)
+        if panel and panel != self._dex_log:
             print(panel)
-            self._dex_panel = panel
+            self._dex_log = panel
+        return view
 
 
 def build_dex(account_override: str | None) -> DexSession | None:
@@ -560,7 +576,11 @@ def run(
 ) -> None:
     app = QApplication(sys.argv[:1])
     overlay = Overlay([b["name"] for b in load_balls()])
-    loop = LiveLoop(species_override, status_override, cal, overlay, dex=build_dex(account))
+    dex = build_dex(account)
+    dex_panel = DexPanel() if dex is not None else None
+    loop = LiveLoop(
+        species_override, status_override, cal, overlay, dex=dex, dex_panel=dex_panel
+    )
     loop.start()
     try:
         code = app.exec()
