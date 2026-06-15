@@ -74,9 +74,10 @@ WAITING_POLL_S = 2.0
 IDLE_FRAME_S = 0.5  # ~2 fps
 BATTLE_FRAME_S = 0.2  # ~5 fps
 # End the battle once the battle-specific signals (enemy bar + menu/action/catch
-# templates) have all been gone this long — covers brief animation gaps without
-# lingering too long after a faint/flee.
-BATTLE_END_GRACE_S = 2.0
+# templates) have all been gone this long — short, so the catch overlay clears
+# promptly after a faint/flee. Mid-battle the menu/action text bridges animation
+# gaps, so this only really spans the end-of-battle fade.
+BATTLE_END_GRACE_S = 1.0
 # Trainer battles cycle through several Pokemon with multi-second gaps (faint +
 # "sent out") that have no battle signal; a longer grace keeps those gaps from
 # ending the battle (which would flash the overlays and re-run trainer detection).
@@ -387,7 +388,16 @@ class LiveLoop:
                 print("battle ended")
             self._caught_printed = False
             self.overlay.hide_battle()
-            self._last_loc_check = 0.0  # refresh the dex panel right away in the overworld
+            # Show the dex panel at once, from the pre-battle location (you can't
+            # move during a battle, so it's still valid) -- no wait for the next
+            # throttled OCR tick. _last_loc_check is reset so OCR re-confirms soon.
+            self._last_loc_check = 0.0
+            if self.dex_panel is not None and self.dex is not None and self._last_hud:
+                view = self.dex.on_location(self._last_hud)
+                if view is not None:
+                    self.dex_panel.apply_scale(scale_for_window(client_rect.height))
+                    self.dex_panel.show_here(view)
+                    self.dex_panel.dock_to(client_rect.left, client_rect.top, client_rect.width)
 
         # Walking around (not in battle): refresh the "missing here" dex panel from
         # the HUD location on a throttle (location OCR is slow, location changes
