@@ -204,6 +204,7 @@ class Calibration(BaseModel):
     battle_text: BattleTextCalibration
     trainer: TrainerCalibration
     location: LocationCalibration
+    hud_time: LocationCalibration  # same top-left HUD crop shape, for the clock line
     caught_icon: CaughtIconCalibration
 
 

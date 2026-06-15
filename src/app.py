@@ -42,9 +42,9 @@ from catch_calc import BattleContext, ball_multiplier, catch_probability
 from dex_panel import DexPanel
 from dex_session import DexSession, LocationView
 from dex_tracker import EncounterData, select_display
-from game_time import season_name
+from game_time import Period, current_period, period_for_game_minute, season_name
 from hp_settler import HpSettler
-from location_reader import is_cave_location, read_location
+from location_reader import is_cave_location, read_game_clock, read_location
 from name_reader import NameReader
 from overlay import Overlay, scale_for_window
 from status_settler import StatusSettler
@@ -435,6 +435,8 @@ class LiveLoop:
         self._is_trainer = False
         self._trainer_decided = False
         self._ot_checked = False
+        self._was_multi = False  # battle has been a horde/double at some point
+        self._multi_turn_synced = False  # synced the real turn on the MULTI->SINGLE switch
         if self.dex_panel is not None:  # overworld panel out of the way during battle
             self.dex_panel.hide_panel()
         print("battle detected")
@@ -446,9 +448,12 @@ class LiveLoop:
         if not self._loc_read:
             loc = read_location(frame, self.cal.location)
             if loc:
-                self.dusk_active = is_cave_location(loc)
+                cave = is_cave_location(loc)
+                night = self._is_night(frame)  # Dusk Ball also boosts at night
+                self.dusk_active = cave or night
                 self._loc_read = True
-                note = " (cave -> Dusk Ball boosted)" if self.dusk_active else ""
+                bits = [b for b, on in (("cave", cave), ("night", night)) if on]
+                note = f" ({'+'.join(bits)} -> Dusk Ball boosted)" if bits else ""
                 print(f"location: {loc}{note}")
                 if self.dex is not None:  # same read drives the dex panel
                     self._update_dex(loc)
@@ -466,11 +471,24 @@ class LiveLoop:
         # `bt` (menu/action/catch templates, ~10 ms) was read in the loop and is
         # passed in: it drives the chat-independent turn counter (command menu
         # reappears each turn) and catch detection ("Gotcha!").
-        # Count menu turns only in a SINGLE battle. During a horde (MULTI) the
-        # multi-target attack/faint animation makes the menu flicker repeatedly,
-        # which would over-count; the chat tracks the real turn through the horde,
-        # and menu counting resumes once one Pokemon remains.
+        # Count menu turns only in a SINGLE battle. In a horde/double (MULTI) the
+        # command menu is unreliable (it shows once PER your-Pokemon in a double,
+        # and flickers during multi-target animations), so it would over-count;
+        # the real turn is taken from the chat instead (below).
+        if reading.state is BattleState.MULTI:
+            self._was_multi = True
         if reading.state is BattleState.SINGLE:
+            # When a horde/double has just narrowed to one Pokemon, sync the real
+            # turn ONCE from the chat (a single blocking read) so we continue at the
+            # correct number instead of restarting the menu counter at turn 1.
+            if self._was_multi and not self._multi_turn_synced:
+                self._multi_turn_synced = True
+                # Only block on a sync read if the async chat hasn't already
+                # established the turn during the MULTI phase (avoids a freeze).
+                if self.turns.turns_completed == 0:
+                    synced = read_turn_number(frame, self.cal.chat)
+                    if synced is not None:
+                        self.turns.observe(synced, asleep)
             self.turns.observe_menu(bt.menu_present, bt.action)
         # Decide trainer vs wild ONCE per battle, and only while the command menu is
         # up: then the scene is static, so the party-icon strip below the bar is
@@ -574,6 +592,14 @@ class LiveLoop:
         if line != self.last_line:
             print(line)
             self.last_line = line
+
+    def _is_night(self, frame) -> bool:
+        """Is it night (Dusk Ball boost window, 21:00-03:59 game time)? Reads the
+        HUD clock the player sees; falls back to the deterministic UTC game time if
+        the clock can't be read."""
+        minute = read_game_clock(frame, self.cal.hud_time)
+        period = period_for_game_minute(minute) if minute is not None else current_period()
+        return period is Period.NIGHT
 
     def _update_dex(self, hud_name: str) -> LocationView | None:
         """Resolve the HUD location to a view and log the panel when it changes.

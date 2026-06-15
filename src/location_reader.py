@@ -69,3 +69,28 @@ def read_location(frame_bgr: np.ndarray, cal: LocationCalibration) -> str:
     up = cv2.resize(crop, None, fx=cal.upscale, fy=cal.upscale, interpolation=cv2.INTER_CUBIC)
     texts = run_ocr(up)
     return clean_location(" ".join(texts)) if texts else ""
+
+
+# Matches the HUD clock "HH:MM" (24h), tolerating a '.' for ':' from OCR.
+_CLOCK = re.compile(r"\b([01]?\d|2[0-3])\s*[:.]\s*([0-5]\d)\b")
+
+
+def read_game_clock(frame_bgr: np.ndarray, cal: LocationCalibration) -> int | None:
+    """In-game minute-of-day (0..1439) from the top-left HUD clock, or None.
+
+    Reads the displayed game time directly (e.g. "Saturday, 22:41" -> 22*60+41)
+    so the Dusk Ball night check uses exactly what the player sees, rather than a
+    computed clock. Used as the primary source; callers fall back to the
+    deterministic UTC time if this returns None (HUD hidden / unreadable)."""
+    h, w = frame_bgr.shape[:2]
+    crop = frame_bgr[int(h * cal.top) : int(h * cal.bottom), int(w * cal.left) : int(w * cal.right)]
+    if crop.size == 0:
+        return None
+    up = cv2.resize(crop, None, fx=cal.upscale, fy=cal.upscale, interpolation=cv2.INTER_CUBIC)
+    texts = run_ocr(up)
+    if not texts:
+        return None
+    m = _CLOCK.search(" ".join(texts))
+    if not m:
+        return None
+    return int(m.group(1)) * 60 + int(m.group(2))

@@ -117,6 +117,17 @@ left = 0.0
 right = 0.18
 upscale = 3
 
+[hud_time]
+# Top-left HUD clock line ("Saturday, 10:23"), just below location + money. OCR'd
+# to decide if it is night (Dusk Ball boost). The "HH:MM" is parsed out, so the
+# money line caught at the top of the crop is harmless. Verified on the *_cave /
+# overworld fixtures (10:23, 11:47, 09:27, 10:00, 10:43).
+top = 0.05
+bottom = 0.085
+left = 0.0
+right = 0.16
+upscale = 3
+
 [trainer]
 # Trainer battles show a party indicator — six small icons (grey circles / Poke
 # balls / Pokemon icons) — in a fixed strip just below the enemy HP bar, which
