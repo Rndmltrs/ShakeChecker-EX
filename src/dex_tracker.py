@@ -79,6 +79,17 @@ _PHENO = {
 }
 # Ambient walking encounters at normal rarity -- the default, so no tag.
 _WALK = {"Grass", "Cave", "Inside"}
+# The three fishing rods. When a species is on two or more of them, collapse them
+# to a single "Rod" (you can fish it; the exact rod hardly matters and the full
+# "Good Rod/Old Rod/Super Rod" is far too long); a single rod stays specific.
+_RODS = {"Old Rod", "Good Rod", "Super Rod"}
+
+
+def _compact_ways(ways: set[str]) -> tuple[str, ...]:
+    rods = ways & _RODS
+    if len(rods) >= 2:
+        ways = (ways - rods) | {"Rod"}
+    return tuple(sorted(ways))
 
 
 def encounter_tag(method: str, rarity: str) -> str:
@@ -125,7 +136,7 @@ def location_entries(
     for pid, slot in sorted(by_id.items()):
         rarity = max(slot["rarities"], key=lambda r: _RARITY_RANK.get(r, 0))
         entries.append(
-            DexEntry(pid, slot["name"], tuple(sorted(slot["ways"])), rarity, pid in caught)
+            DexEntry(pid, slot["name"], _compact_ways(slot["ways"]), rarity, pid in caught)
         )
     return entries
 

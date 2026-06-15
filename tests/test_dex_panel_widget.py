@@ -44,7 +44,7 @@ def test_show_here_fills_rows_and_colors(qt_app):
     ]
     p = DexPanel()
     p.show_here(view(entries))
-    assert "2 needed" in p._subtitle.text()
+    assert "2 left" in p._subtitle.text()
     assert "Bulbasaur" in p._rows[0]["name"].text()
     assert "#b86bff" in p._rows[0]["name"].text()  # Lure -> purple
     assert "Water" in p._rows[1]["way"].text()
@@ -69,7 +69,7 @@ def test_caught_padding_marked_with_check(qt_app):
     ]
     p = DexPanel()
     p.show_here(view(entries))
-    assert "1 needed" in p._subtitle.text()
+    assert "1 left" in p._subtitle.text()
     assert "✓" in p._rows[1]["way"].text()
 
 
@@ -77,7 +77,7 @@ def test_all_caught_message(qt_app):
     entries = [DexEntry(1, "A", (), "Common", True)]  # caught, too common to pad
     p = DexPanel()
     p.show_here(view(entries))
-    assert "0 needed" in p._subtitle.text()
+    assert "0 left" in p._subtitle.text()
     assert "all caught here" in p._rows[0]["name"].text()
 
 

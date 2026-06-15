@@ -26,7 +26,7 @@ from collections.abc import Callable
 import win32con
 import win32gui
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QCursor, QFont
+from PyQt6.QtGui import QCursor, QFont, QFontMetrics
 from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -61,10 +61,10 @@ _RARITY_COLORS = [
 _RARITY_COLOR = dict(_RARITY_COLORS) | {"Very Common": "#9d9d9d", "Horde": "#9d9d9d"}
 _DEFAULT_COLOR = "#9d9d9d"
 
-# Base (scale 1.0) sizes in logical px (mirrors overlay.py's approach). Wide enough
-# that long names incl. forms ("Gastrodon-East") + a way ("Good Rod/Old Rod") and
-# the region/time/season subtitle all fit; they never show with the catch overlay.
-BASE_PANEL_W = 292
+# Base (scale 1.0) sizes in logical px (mirrors overlay.py's approach). The way
+# sits right after the name and overlong ways are elided, so this only needs to
+# fit a typical name + short way; long names still show in full (the way elides).
+BASE_PANEL_W = 236
 BASE_SPRITE_H = 22
 BASE_SPRITE_COL_W = 30  # fixed sprite-column width so names start flush
 BASE_TITLE_PX = 15
@@ -202,6 +202,8 @@ class DexPanel(QWidget):
         self._panel_w = self._px(BASE_PANEL_W)
         self.setFixedWidth(self._panel_w)
         self._sprite_h = self._px(BASE_SPRITE_H)
+        self._name_fm = QFontMetrics(self._font(self._px(BASE_ROW_PX)))
+        self._way_fm = QFontMetrics(self._font(self._px(BASE_SUB_PX)))
         self._title.setFont(self._font(self._px(BASE_TITLE_PX), bold=True))
         self._subtitle.setFont(self._font(self._px(BASE_SUB_PX)))
         icon_font = self._font(self._px(BASE_ICON_PX))
@@ -225,7 +227,7 @@ class DexPanel(QWidget):
         self._title.setText(view.route.title())
         self._subtitle.setText(
             f"{view.region.title()} · {view.period.value.title()} · "
-            f"{season_name(view.season)} — {needed} needed"
+            f"{season_name(view.season)} · {needed} left"
         )
         self._ensure_rows(max(1, len(entries)))
         for i, r in enumerate(self._rows):
@@ -366,14 +368,17 @@ class DexPanel(QWidget):
         sprite.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter)
         name = QLabel("")
         name.setTextFormat(Qt.TextFormat.RichText)
-        name.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        name.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         way = QLabel("")
         way.setStyleSheet("color: #9aa0aa;")
-        way.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        # name fills the gap up to the (right-aligned) way, so it clips much later
+        way.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        # way sits right after the name (small gap, no wide right-aligned column);
+        # the trailing stretch absorbs the slack on the right. The way is pre-elided
+        # in _fill_row so the (full) name is never cut and the panel stays narrow.
         row.addWidget(sprite)
-        row.addWidget(name, 1)
+        row.addWidget(name)
         row.addWidget(way)
+        row.addStretch(1)
         # insert above the trailing stretch so rows stay top-aligned
         self._list_layout.insertWidget(self._list_layout.count() - 1, container)
         r = {"box": row, "w": container, "sprite": sprite, "name": name, "way": way,
@@ -404,7 +409,19 @@ class DexPanel(QWidget):
         way = "/".join(entry.ways)
         if entry.caught:
             way = (way + " ✓").strip()
-        r["way"].setText(way)
+        # Elide the way to whatever space remains right of the (full) name, so the
+        # name is never cut and the panel can stay narrow. Hidden if almost no room.
+        used = (
+            2 * self._px(BASE_MARGIN_X)
+            + self._px(BASE_SPRITE_COL_W)
+            + self._name_fm.horizontalAdvance(entry.name)
+            + 2 * self._px(BASE_ROW_SPACING)
+        )
+        budget = self._panel_w - used
+        if not way or budget < self._px(16):
+            r["way"].setText("")
+        else:
+            r["way"].setText(self._way_fm.elidedText(way, Qt.TextElideMode.ElideRight, budget))
 
     def _set_row_sprite(self, r: dict, dex_id: int) -> None:
         # Reload only on a species change so an animated GIF isn't restarted to
