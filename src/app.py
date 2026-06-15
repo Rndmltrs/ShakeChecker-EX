@@ -377,12 +377,17 @@ class LiveLoop:
                 print("battle ended")
             self._caught_printed = False
             self.overlay.hide_battle()
+            self._last_loc_check = 0.0  # refresh the dex panel right away in the overworld
 
         # Walking around (not in battle): refresh the "missing here" dex panel from
         # the HUD location on a throttle (location OCR is slow, location changes
         # slowly). Skipped during battles, where the location is read once instead.
+        # Drive the overworld dex panel only in the IDLE state -- NOT merely when
+        # "not in_battle" this frame: during a battle animation the bar/menu can
+        # briefly vanish while the state is still BATTLE, which would flash the
+        # dex panel over the catch overlay.
         dex_due = now - self._last_loc_check >= DEX_LOC_INTERVAL_S
-        if not in_battle and self.dex is not None and dex_due:
+        if self.state is AppState.IDLE and self.dex is not None and dex_due:
             self._last_loc_check = now
             view = self._update_dex(read_location(frame, self.cal.location))
             if self.dex_panel is not None:
@@ -464,6 +469,10 @@ class LiveLoop:
         if self._catch_streak >= 2 and not self._caught_printed and self.cached is not None:
             print(f"caught {self.cached['name']}!")
             self._caught_printed = True
+            # A fresh catch has no OT ball yet (that only shows on already-owned
+            # species), so record it here so it drops off the dex list at once.
+            if self.dex is not None and self.cached.get("id"):
+                self.dex.record_caught(self.cached["id"])
 
         if reading.state is BattleState.SINGLE:
             if self._is_trainer:

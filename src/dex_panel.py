@@ -61,8 +61,10 @@ _RARITY_COLORS = [
 _RARITY_COLOR = dict(_RARITY_COLORS) | {"Very Common": "#9d9d9d", "Horde": "#9d9d9d"}
 _DEFAULT_COLOR = "#9d9d9d"
 
-# Base (scale 1.0) sizes in logical px (mirrors overlay.py's approach).
-BASE_PANEL_W = 210
+# Base (scale 1.0) sizes in logical px (mirrors overlay.py's approach). Wider than
+# the catch overlay (they never show together) so a long name + way like
+# "Magikarp  Good Rod/Old Rod" and the region/time/season subtitle don't clip.
+BASE_PANEL_W = 258
 BASE_SPRITE_H = 22
 BASE_TITLE_PX = 15
 BASE_SUB_PX = 11
