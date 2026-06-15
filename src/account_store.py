@@ -96,6 +96,22 @@ class CaughtStore:
         self.save()
         return True
 
+    def remove(self, species_id: int) -> bool:
+        """Un-mark a species (manual correction). Returns True if it was present."""
+        if species_id not in self.caught:
+            return False
+        self.caught.discard(species_id)
+        self.save()
+        return True
+
+    def toggle(self, species_id: int) -> bool:
+        """Flip the caught state. Returns the new state (True = now caught)."""
+        if species_id in self.caught:
+            self.remove(species_id)
+            return False
+        self.add(species_id)
+        return True
+
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = {"caught": sorted(self.caught)}

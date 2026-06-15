@@ -304,6 +304,12 @@ class LiveLoop:
         self._ot_checked = False  # enemy's OT-caught icon checked this battle
         self._last_loc_check = 0.0  # last IDLE location OCR (throttle)
         self._dex_log = ""  # last printed dex panel text (console dedup)
+        self._last_hud = ""  # last HUD location seen (to refresh the panel on a toggle)
+        if self.dex_panel is not None and self.dex is not None:
+            self.dex_panel.on_toggle_caught = self._dex_toggle_caught
+            self.dex_panel.on_select_profile = self._dex_use_profile
+            self.dex_panel.on_create_profile = self._dex_use_profile
+            self.dex_panel.get_profiles = self._dex_profiles
 
     def start(self) -> None:
         species_src = (
@@ -542,12 +548,42 @@ class LiveLoop:
         Returns the view (or None) so the caller can drive the overlay panel."""
         if self.dex is None or not hud_name:
             return None
+        self._last_hud = hud_name
         view = self.dex.on_location(hud_name)
         panel = dex_panel_text(view)
         if panel and panel != self._dex_log:
             print(panel)
             self._dex_log = panel
         return view
+
+    def _refresh_dex_panel(self) -> None:
+        """Re-render the panel for the current location (after a toggle/profile
+        change) so the moved species and counts update immediately."""
+        if self.dex is None or self.dex_panel is None or not self._last_hud:
+            return
+        view = self.dex.on_location(self._last_hud)
+        if view is not None:
+            self.dex_panel.show_here(view)
+
+    def _dex_toggle_caught(self, dex_id: int) -> None:
+        if self.dex is None:
+            return
+        now = self.dex.toggle_caught(dex_id)
+        print(f"dex: {'marked' if now else 'un-marked'} #{dex_id} as caught")
+        self._refresh_dex_panel()
+
+    def _dex_use_profile(self, name: str) -> None:
+        """Switch to (or create) an account profile and reload its caught list."""
+        cfg = AccountConfig.load(USERDATA)
+        account = cfg.use(name)
+        if self.dex is not None:
+            self.dex.set_caught(CaughtStore.for_account(USERDATA, account))
+        print(f"dex: active account '{account}'")
+        self._refresh_dex_panel()
+
+    def _dex_profiles(self) -> tuple[str | None, list[str]]:
+        cfg = AccountConfig.load(USERDATA)
+        return cfg.active, cfg.accounts
 
 
 def build_dex(account_override: str | None) -> DexSession | None:

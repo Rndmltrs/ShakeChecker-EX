@@ -72,3 +72,12 @@ class DexSession:
         """Mark a species OT-caught (call when the OT ball icon is seen). Returns
         True if it was newly recorded, so the caller can log it once."""
         return self._caught.add(species_id)
+
+    def toggle_caught(self, species_id: int) -> bool:
+        """Manually flip a species' caught state (overlay check-off). Returns the
+        new state (True = now caught)."""
+        return self._caught.toggle(species_id)
+
+    def set_caught(self, caught: CaughtStore) -> None:
+        """Swap the active account's caught store (profile switch)."""
+        self._caught = caught

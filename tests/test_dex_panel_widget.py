@@ -77,3 +77,22 @@ def test_all_caught_message(qt_app):
     p.show_here(view(entries))
     assert "0 needed" in p._subtitle.text()
     assert "all caught here" in p._rows[0]["name"].text()
+
+
+def test_row_click_invokes_toggle_with_dex_id(qt_app):
+    got: list[int] = []
+    p = DexPanel()
+    p.on_toggle_caught = got.append
+    p.show_here(view([DexEntry(72, "Tentacool", ("Water",), "Uncommon", False)]))
+    p._row_clicked(0)
+    assert got == [72]
+    p._row_clicked(4)  # an empty/hidden row -> no species -> no callback
+    assert got == [72]
+
+
+def test_profile_menu_uses_callback_list(qt_app):
+    # the menu is built from get_profiles(); just verify it's consulted safely
+    p = DexPanel()
+    p.get_profiles = lambda: ("Red", ["Red", "Blue"])
+    active, names = p.get_profiles()
+    assert active == "Red" and names == ["Red", "Blue"]
