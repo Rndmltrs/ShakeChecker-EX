@@ -495,8 +495,11 @@ class LiveLoop:
         #  - DOWN for a menu over-count, but only once the menu has been quiet for
         #    TURN_DOWN_GUARD_S, so a stale async read just after a real advance
         #    can't briefly drag the live count below the truth.
-        self.chat.submit(frame)
+        # Poll BEFORE submit: consume any finished read first, then start the next
+        # one. (Submitting first would replace a just-finished future and lose its
+        # result, so the turn never arrived -- the long-standing chat bug.)
         chat_turn = self.chat.poll()
+        self.chat.submit(frame)
         if chat_turn is not None:
             if self.debug and chat_turn != self._last_chat_turn:  # shows the chat IS read
                 self._last_chat_turn = chat_turn

@@ -62,7 +62,11 @@ class AsyncChatReader:
         return self._future is not None and not self._future.done()
 
     def submit(self, frame_bgr: np.ndarray) -> None:
-        if self.busy():
+        # Don't start a new read while one exists -- whether still running OR
+        # finished-but-not-yet-polled. Overwriting a finished future here (it is
+        # no longer "busy") would silently discard its result before poll() reads
+        # it, so the turn would never come through. poll() clears _future.
+        if self._future is not None:
             return
         c = self._cal
         h, w = frame_bgr.shape[:2]

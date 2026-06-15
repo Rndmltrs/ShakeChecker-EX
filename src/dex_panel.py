@@ -371,14 +371,14 @@ class DexPanel(QWidget):
         name.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         way = QLabel("")
         way.setStyleSheet("color: #9aa0aa;")
-        way.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        # way sits right after the name (small gap, no wide right-aligned column);
-        # the trailing stretch absorbs the slack on the right. The way is pre-elided
-        # in _fill_row so the (full) name is never cut and the panel stays narrow.
+        way.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        # The way stays right-aligned (a tidy column); the stretch between name and
+        # way is the gap, kept small by the narrow panel. The way is pre-elided in
+        # _fill_row to whatever space is left, so the (full) name is never cut.
         row.addWidget(sprite)
         row.addWidget(name)
-        row.addWidget(way)
         row.addStretch(1)
+        row.addWidget(way)
         # insert above the trailing stretch so rows stay top-aligned
         self._list_layout.insertWidget(self._list_layout.count() - 1, container)
         r = {"box": row, "w": container, "sprite": sprite, "name": name, "way": way,

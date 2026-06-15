@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import cv2
 
-from battle_log import parse_turn_number, read_turn_number
+from battle_log import AsyncChatReader, parse_turn_number, read_turn_number
 from battle_reader import BattleTextReader, load_calibration
 from turn_tracker import TurnTracker
 
@@ -282,3 +283,21 @@ def test_menu_count_survives_reset():
     for _ in range(10):
         menu(t, True)
     assert t.turns_completed == 0
+
+
+def test_async_chat_reader_delivers_turn_despite_submit_before_poll():
+    # Regression: submit() must not overwrite a finished-but-unpolled future, or
+    # the turn is never delivered (the long-standing "chat never corrects" bug).
+    img = cv2.imread(str(ROOT / "fixtures" / "full_health_no_status.png"))
+    reader = AsyncChatReader(CAL.chat)
+    try:
+        got = None
+        for _ in range(60):  # ~6s budget incl. the one-time OCR init
+            reader.submit(img)  # deliberately the OLD order (submit before poll)
+            got = reader.poll()
+            if got is not None:
+                break
+            time.sleep(0.1)
+    finally:
+        reader.shutdown()
+    assert got == 2  # "Turn 2 started!" in that fixture's chat
