@@ -52,7 +52,7 @@ class SpriteLoader:
     def __init__(self, base: Path = SPRITES_DIR) -> None:
         self._base = base
         self._pix: dict[tuple, QPixmap] = {}
-        self._movies: dict[tuple[int, int], QMovie] = {}
+        self._movies: dict[tuple[int, int, int], QMovie] = {}
 
     def ball_pixmap(self, name: str, height: int) -> QPixmap:
         key = ("ball", name, height)

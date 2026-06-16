@@ -167,7 +167,7 @@ class DexPanel(QWidget):
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
-        panel = QFrame(objectName="panel")
+        panel = QFrame(objectName="panel")  # type: ignore[call-arg]  # PyQt6 accepts QObject kwargs
         panel.setStyleSheet(
             "#panel { background: rgba(18,18,20,180); border-radius: 10px; }"
             " QLabel { color: #eeeeee; background: transparent; }"
@@ -219,7 +219,7 @@ class DexPanel(QWidget):
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self._scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self._scroll.viewport().setStyleSheet("background: transparent;")
+        self._scroll.viewport().setStyleSheet("background: transparent;")  # type: ignore[union-attr]
         self._list = QWidget()
         self._list.setStyleSheet("background: transparent;")
         self._list_layout = QVBoxLayout(self._list)
@@ -254,8 +254,10 @@ class DexPanel(QWidget):
             btn.setIconSize(QSize(isz, isz))
             btn.setFixedSize(isz + self._px(6), isz + self._px(6))
         self._col.setContentsMargins(
-            self._px(BASE_MARGIN_X), self._px(BASE_MARGIN_Y),
-            self._px(BASE_MARGIN_X), self._px(BASE_MARGIN_Y),
+            self._px(BASE_MARGIN_X),
+            self._px(BASE_MARGIN_Y),
+            self._px(BASE_MARGIN_X),
+            self._px(BASE_MARGIN_Y),
         )
         self._col.setSpacing(self._px(BASE_COL_SPACING))
         self._list_layout.setSpacing(self._px(BASE_ROW_SPACING))
@@ -432,7 +434,7 @@ class DexPanel(QWidget):
             | Qt.WindowType.Tool
         )
         w.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        frame = QFrame(w, objectName=obj_name)
+        frame = QFrame(w, objectName=obj_name)  # type: ignore[call-arg]  # PyQt6 accepts QObject kwargs
         frame.setStyleSheet(
             f"#{obj_name} {{ background: rgba(18,18,20,238); border-radius: 8px; }}"
             " QLabel { color: #eeeeee; background: transparent; }"
@@ -487,8 +489,15 @@ class DexPanel(QWidget):
         row.addWidget(way)
         # insert above the trailing stretch so rows stay top-aligned
         self._list_layout.insertWidget(self._list_layout.count() - 1, container)
-        r = {"box": row, "w": container, "sprite": sprite, "name": name, "way": way,
-             "dex": None, "movie": None}
+        r = {
+            "box": row,
+            "w": container,
+            "sprite": sprite,
+            "name": name,
+            "way": way,
+            "dex": None,
+            "movie": None,
+        }
         self._style_row(r)
         self._rows.append(r)
 

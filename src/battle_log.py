@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import re
 from concurrent.futures import Future, ThreadPoolExecutor
+from typing import Any
 
 import cv2
 import numpy as np
@@ -63,7 +64,7 @@ class AsyncChatReader:
         self._cal = cal
         self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="chat-ocr")
         self._future: Future[int | None] | None = None
-        self._ocr = None
+        self._ocr: Any = None  # lazily created RapidOCR (untyped third-party)
 
     def busy(self) -> bool:
         return self._future is not None and not self._future.done()

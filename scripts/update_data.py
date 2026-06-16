@@ -15,7 +15,9 @@ import json
 import urllib.request
 from pathlib import Path
 
-SOURCE_URL = "https://raw.githubusercontent.com/PokeMMOZone/PokeMMO-Data/main/data/location-data.json"
+SOURCE_URL = (
+    "https://raw.githubusercontent.com/PokeMMOZone/PokeMMO-Data/main/data/location-data.json"
+)
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "src" / "data"
 SPECIES_PATH = DATA / "species_core.json"

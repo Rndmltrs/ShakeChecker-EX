@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff"]
+dev = ["pytest", "ruff", "mypy"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
@@ -28,3 +28,13 @@ src = ["src", "tests", "scripts"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4"]
+
+[tool.mypy]
+files = ["src"]
+python_version = "3.11"
+# Several deps ship no type stubs (mss, pywin32, rapidocr, rapidfuzz); don't fail
+# on their missing imports. Our own code is still checked, and the few unavoidable
+# opencv/PyQt6 stub gaps carry targeted `# type: ignore[code]` with a reason.
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true

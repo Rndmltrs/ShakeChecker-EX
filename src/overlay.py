@@ -138,7 +138,7 @@ class Overlay(QWidget):
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
-        panel = QFrame(objectName="panel")
+        panel = QFrame(objectName="panel")  # type: ignore[call-arg]  # PyQt6 accepts QObject kwargs
         panel.setStyleSheet(
             "#panel { background: rgba(18,18,20,180); border-radius: 10px; }"
             " QLabel { color: #eeeeee; background: transparent; }"
