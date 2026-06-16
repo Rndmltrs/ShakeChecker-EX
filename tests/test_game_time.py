@@ -64,9 +64,18 @@ def test_current_period_from_utc():
 def test_season_cycles_monthly_every_four_months():
     # PokeMMO: Jan=Spring, then one season per month, wrapping every 4 months.
     expected = {
-        1: "Spring", 2: "Summer", 3: "Autumn", 4: "Winter",
-        5: "Spring", 6: "Summer", 7: "Autumn", 8: "Winter",
-        9: "Spring", 10: "Summer", 11: "Autumn", 12: "Winter",
+        1: "Spring",
+        2: "Summer",
+        3: "Autumn",
+        4: "Winter",
+        5: "Spring",
+        6: "Summer",
+        7: "Autumn",
+        8: "Winter",
+        9: "Spring",
+        10: "Summer",
+        11: "Autumn",
+        12: "Winter",
     }
     for month, name in expected.items():
         assert season_name(season_for_month(month)) == name

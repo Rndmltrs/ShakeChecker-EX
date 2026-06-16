@@ -107,9 +107,7 @@ def encounter_tag(method: str, rarity: str) -> str:
 
 def available_here(encounters: list[dict], period: str, season: int) -> list[dict]:
     """The encounters active at this period AND season."""
-    return [
-        e for e in encounters if period in e["periods"] and season in e["seasons"]
-    ]
+    return [e for e in encounters if period in e["periods"] and season in e["seasons"]]
 
 
 def location_entries(
@@ -241,18 +239,14 @@ class EncounterData:
             return set()
         return {self._locations[k]["region"] for k in self._candidate_keys(norm, None)}
 
-    def entries_here(
-        self, key: str, period: str, season: int, caught: set[int]
-    ) -> list[DexEntry]:
+    def entries_here(self, key: str, period: str, season: int, caught: set[int]) -> list[DexEntry]:
         """All non-legendary species available now at a location (caught + uncaught)."""
         loc = self._locations.get(key)
         if loc is None:
             return []
         return location_entries(loc["encounters"], period, season, caught, self._legendaries)
 
-    def missing_here(
-        self, key: str, period: str, season: int, caught: set[int]
-    ) -> list[DexEntry]:
+    def missing_here(self, key: str, period: str, season: int, caught: set[int]) -> list[DexEntry]:
         """Just the uncaught entries (convenience for the dev scripts)."""
         return [e for e in self.entries_here(key, period, season, caught) if not e.caught]
 

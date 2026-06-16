@@ -254,8 +254,10 @@ class DexPanel(QWidget):
             btn.setIconSize(QSize(isz, isz))
             btn.setFixedSize(isz + self._px(6), isz + self._px(6))
         self._col.setContentsMargins(
-            self._px(BASE_MARGIN_X), self._px(BASE_MARGIN_Y),
-            self._px(BASE_MARGIN_X), self._px(BASE_MARGIN_Y),
+            self._px(BASE_MARGIN_X),
+            self._px(BASE_MARGIN_Y),
+            self._px(BASE_MARGIN_X),
+            self._px(BASE_MARGIN_Y),
         )
         self._col.setSpacing(self._px(BASE_COL_SPACING))
         self._list_layout.setSpacing(self._px(BASE_ROW_SPACING))
@@ -487,8 +489,15 @@ class DexPanel(QWidget):
         row.addWidget(way)
         # insert above the trailing stretch so rows stay top-aligned
         self._list_layout.insertWidget(self._list_layout.count() - 1, container)
-        r = {"box": row, "w": container, "sprite": sprite, "name": name, "way": way,
-             "dex": None, "movie": None}
+        r = {
+            "box": row,
+            "w": container,
+            "sprite": sprite,
+            "name": name,
+            "way": way,
+            "dex": None,
+            "movie": None,
+        }
         self._style_row(r)
         self._rows.append(r)
 
