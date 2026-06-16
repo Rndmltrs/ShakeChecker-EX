@@ -117,11 +117,13 @@ log = logging.getLogger("shakechecker")
 class _LevelFormatter(logging.Formatter):
     """Plain message for INFO (the console output the user reads), '[dbg]'-prefixed
     for DEBUG -- preserving the exact look of the old print()s while letting the log
-    level (set by --debug) decide what is shown."""
+    level (set by --debug) decide what is shown. Tracebacks (log.exception) are kept."""
 
     def format(self, record: logging.LogRecord) -> str:
-        msg = record.getMessage()
-        return f"[dbg] {msg}" if record.levelno <= logging.DEBUG else msg
+        msg = ("[dbg] " if record.levelno <= logging.DEBUG else "") + record.getMessage()
+        if record.exc_info:
+            msg += "\n" + self.formatException(record.exc_info)
+        return msg
 
 
 def setup_logging(debug: bool) -> None:
@@ -387,7 +389,14 @@ class LiveLoop:
         QTimer.singleShot(0, self.step)
 
     def step(self) -> None:
-        interval_s = self._tick()
+        # One bad frame (a transient capture/OCR hiccup) must never kill the loop:
+        # if _tick raised, the next singleShot would never be scheduled and the
+        # overlay would freeze for good. Log it and carry on at the normal cadence.
+        try:
+            interval_s = self._tick()
+        except Exception:
+            log.exception("tick failed; continuing")
+            interval_s = self._frame_interval()
         QTimer.singleShot(int(interval_s * 1000), self.step)
 
     def _frame_interval(self) -> float:
