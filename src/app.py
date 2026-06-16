@@ -511,14 +511,17 @@ class LiveLoop:
         log.info("battle detected")
 
     def _battle_step(self, frame, reading, bt, rect, now) -> None:
-        # Read the location once per battle (it never changes mid-battle) to set
-        # the Dusk Ball cave boost. Retry until a non-empty name is read (the first
-        # battle frame can be mid-transition).
+        # Read the location + clock ONCE per battle to set the Dusk Ball boost, then
+        # freeze it (gated by _loc_read, reset in _enter_battle). This is deliberate:
+        # PokeMMO locks the Dusk Ball bonus to the moment the battle STARTED, so if
+        # the clock rolls from Night (03:59) to Morning (04:00) mid-battle the boost
+        # must NOT drop. Reading once at battle start captures exactly that. Retry
+        # until a non-empty name is read (the first battle frame can be mid-transition).
         if not self._loc_read:
             loc = read_location(frame, self.cal.location)
             if loc:
                 cave = is_cave_location(loc)
-                night = self._is_night(frame)  # Dusk Ball also boosts at night
+                night = self._is_night(frame)  # Dusk Ball also boosts at night (locked here)
                 self.dusk_active = cave or night
                 self._loc_read = True
                 bits = [b for b, on in (("cave", cave), ("night", night)) if on]

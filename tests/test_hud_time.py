@@ -38,12 +38,13 @@ def test_reads_hud_clock(name, hm):
     assert minute == hm[0] * 60 + hm[1]
 
 
-def test_dusk_ball_night_window_is_2100_to_0759():
-    # The Dusk Ball window matches the in-game dark filter: 21:00 -> 07:59,
-    # wider than the Night spawn period because it stays dark into early morning.
+def test_dusk_ball_night_window_is_the_strict_night_period():
+    # PokeMMO keys the Dusk Ball boost to the STRICT Night period (21:00-03:59),
+    # not the visual darkness: at 04:00 the game registers Morning and the boost
+    # drops to 1.0x, even though the overworld stays dark a while longer.
     def night(h, m=0):
         return is_dusk_ball_night(h * 60 + m)
 
     assert night(21, 0) and night(23, 59) and night(0, 0) and night(3, 59)
-    assert night(4, 0) and night(7, 59)  # still dark in the early morning
-    assert not night(8, 0) and not night(10, 23) and not night(20, 59)
+    assert not night(4, 0)  # Morning starts -> boost gone immediately
+    assert not night(7, 59) and not night(8, 0) and not night(10, 23) and not night(20, 59)

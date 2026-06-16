@@ -68,18 +68,14 @@ def season_name(index: int) -> str:
     return SEASON_NAMES[index % 4]
 
 
-# Dusk Ball boost window (game-clock minutes). The overworld stays visibly dark
-# from night into the early "morning" -- confirmed in-game dark until ~08:00 with
-# the sunrise marker -- so the Dusk Ball window is WIDER than the Night spawn
-# period (21:00-03:59): it runs 21:00 -> 07:59. Adjust these two if in-game
-# testing shows the boost cuts off elsewhere.
-DUSK_NIGHT_START = 21 * 60  # 21:00
-DUSK_NIGHT_END = 8 * 60  # 08:00 (exclusive)
-
-
 def is_dusk_ball_night(game_minute: int) -> bool:
-    """Whether the Dusk Ball gets its night boost at this game-clock minute."""
-    return game_minute >= DUSK_NIGHT_START or game_minute < DUSK_NIGHT_END
+    """Whether the Dusk Ball gets its night boost at this game-clock minute.
+
+    PokeMMO keys this to the STRICT Night period (21:00-03:59), NOT the visual
+    darkness: the moment the in-game clock hits 04:00 the game registers Morning
+    and the boost drops from 2.5x to 1.0x, even though the overworld stays dark for
+    a few more hours. So the boost window is exactly the Night spawn period."""
+    return period_for_game_minute(game_minute) is Period.NIGHT
 
 
 def current_game_minute(now_utc: _dt.datetime | None = None) -> int:
