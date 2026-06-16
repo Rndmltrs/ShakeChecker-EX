@@ -234,7 +234,8 @@ def _fill_mask(hsv: np.ndarray, cal: HpBarCalibration) -> np.ndarray:
     c = cal.hsv
     mask = np.zeros(hsv.shape[:2], np.uint8)
     for h_lo, h_hi in (c.green_h, c.yellow_h, c.red_h_low, c.red_h_high):
-        mask |= cv2.inRange(
+        # inRange returns a uint8 mask; the opencv-stubs return dtype is over-broad.
+        mask |= cv2.inRange(  # type: ignore[arg-type]
             hsv,
             np.array([h_lo, c.sat_min, c.val_min]),
             np.array([h_hi, 255, 255]),
@@ -459,7 +460,8 @@ def read_enemy_bars(
 
     mask = _fill_mask(hsv_roi, c)
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((3, 9), np.uint8))
-    n, _, stats, _ = cv2.connectedComponentsWithStats(mask, 8)
+    # uint8 mask is a valid input; the opencv-stubs dtype union is over-strict.
+    n, _, stats, _ = cv2.connectedComponentsWithStats(mask, 8)  # type: ignore[call-overload]
 
     bars: list[BarReading] = []
     for i in range(1, n):
@@ -576,6 +578,16 @@ def read_caught_icon(frame_bgr: np.ndarray, bar: BarReading, cal: CaughtIconCali
     return int(np.count_nonzero(red)) >= cal.min_red_px
 
 
+def _load_template(path: Path) -> np.ndarray:
+    """Load a grayscale template, raising a clear error if the PNG is missing
+    (cv2.imread returns None rather than raising). Narrowing away the None here
+    also lets every _match() call see a non-optional array."""
+    tpl = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
+    if tpl is None:
+        raise FileNotFoundError(f"missing battle-text template: {path}")
+    return tpl
+
+
 class BattleTextReader:
     """Detect the command menu and the catch banner by TEMPLATE MATCHING, not OCR.
 
@@ -588,17 +600,14 @@ class BattleTextReader:
     def __init__(self, cal: BattleTextCalibration, templates_dir: Path | str) -> None:
         self._cal = cal
         d = Path(templates_dir)
-        self._menu_tpl = cv2.imread(str(d / "menu_fight.png"), cv2.IMREAD_GRAYSCALE)
-        self._catch_tpl = cv2.imread(str(d / "catch_gotcha.png"), cv2.IMREAD_GRAYSCALE)
+        self._menu_tpl = _load_template(d / "menu_fight.png")
+        self._catch_tpl = _load_template(d / "catch_gotcha.png")
         # A committed action shows one of these: "X used Y!" (attack/item, and the
         # enemy's counter), or "Go! Y!" (sending a Pokemon on a switch).
         self._action_tpls = [
-            cv2.imread(str(d / "action_used.png"), cv2.IMREAD_GRAYSCALE),
-            cv2.imread(str(d / "action_go.png"), cv2.IMREAD_GRAYSCALE),
+            _load_template(d / "action_used.png"),
+            _load_template(d / "action_go.png"),
         ]
-        loaded = [self._menu_tpl, self._catch_tpl, *self._action_tpls]
-        if any(t is None for t in loaded):
-            raise FileNotFoundError(f"missing battle-text templates in {d}")
 
     def read(self, frame_bgr: np.ndarray) -> BattleText:
         c = self._cal
