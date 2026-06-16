@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ShakeChecker — live catch-rate overlay for PokeMMO</title>
+    <meta
+      name="description"
+      content="ShakeChecker is a strictly read-only screen overlay for PokeMMO that shows live catch-rate percentages per Poke Ball during wild battles. No inputs, no memory reading — just an overlay."
+    />
+    <link rel="icon" href="icon.png" />
+    <!-- Open Graph (nice link previews when shared) -->
+    <meta property="og:title" content="ShakeChecker — live catch rates for PokeMMO" />
+    <meta
+      property="og:description"
+      content="Read-only overlay that shows live catch % per Poke Ball during wild battles. No game inputs."
+    />
+    <meta property="og:image" content="icon.png" />
+    <meta property="og:type" content="website" />
+    <style>
+      :root {
+        --bg: #0f0f12;
+        --bg-soft: #16161b;
+        --card: #1b1b22;
+        --line: #2a2a33;
+        --text: #ececf0;
+        --muted: #a0a0ad;
+        --red: #ee4b4b;
+        --red-soft: #ff6a6a;
+        --green: #55dd66;
+        --radius: 14px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        margin: 0;
+        background: radial-gradient(1200px 600px at 50% -10%, #20131a 0%, var(--bg) 55%);
+        color: var(--text);
+        font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      a {
+        color: var(--red-soft);
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+      .wrap {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 0 20px;
+      }
+      .btn {
+        display: inline-block;
+        padding: 13px 22px;
+        border-radius: 999px;
+        font-weight: 700;
+        border: 1px solid transparent;
+        transition: transform 0.06s ease;
+      }
+      .btn:hover {
+        text-decoration: none;
+        transform: translateY(-1px);
+      }
+      .btn-primary {
+        background: var(--red);
+        color: #fff;
+      }
+      .btn-ghost {
+        border-color: var(--line);
+        color: var(--text);
+      }
+
+      /* Hero */
+      header.hero {
+        text-align: center;
+        padding: 70px 0 40px;
+      }
+      .hero img.logo {
+        width: 120px;
+        height: 120px;
+        border-radius: 26px;
+        box-shadow: 0 10px 40px rgba(238, 75, 75, 0.25);
+      }
+      .hero h1 {
+        font-size: clamp(2.2rem, 5vw, 3.4rem);
+        margin: 18px 0 6px;
+        letter-spacing: -0.5px;
+      }
+      .hero .tag {
+        color: var(--muted);
+        font-size: clamp(1.05rem, 2.2vw, 1.3rem);
+        max-width: 620px;
+        margin: 0 auto 26px;
+      }
+      .cta {
+        display: flex;
+        gap: 12px;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+      .sub {
+        color: var(--muted);
+        font-size: 0.85rem;
+        margin-top: 14px;
+      }
+
+      /* Trust banner */
+      .trust {
+        background: linear-gradient(90deg, rgba(85, 221, 102, 0.08), rgba(85, 221, 102, 0.02));
+        border: 1px solid rgba(85, 221, 102, 0.25);
+        border-radius: var(--radius);
+        padding: 16px 20px;
+        margin: 10px 0 50px;
+        text-align: center;
+        color: #cfeed4;
+        font-size: 0.97rem;
+      }
+      .trust b {
+        color: var(--green);
+      }
+
+      section {
+        padding: 40px 0;
+        border-top: 1px solid var(--line);
+      }
+      h2 {
+        font-size: 1.6rem;
+        margin: 0 0 24px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 16px;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 20px;
+      }
+      .card h3 {
+        margin: 0 0 8px;
+        font-size: 1.1rem;
+      }
+      .card p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+
+      .shots {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 16px;
+      }
+      .shots img {
+        width: 100%;
+        border-radius: var(--radius);
+        border: 1px solid var(--line);
+        background: var(--bg-soft);
+      }
+
+      /* Steps */
+      ol.steps {
+        counter-reset: s;
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      ol.steps li {
+        counter-increment: s;
+        position: relative;
+        padding: 12px 0 12px 46px;
+        border-bottom: 1px solid var(--line);
+        color: var(--muted);
+      }
+      ol.steps li:last-child {
+        border-bottom: 0;
+      }
+      ol.steps li::before {
+        content: counter(s);
+        position: absolute;
+        left: 0;
+        top: 10px;
+        width: 30px;
+        height: 30px;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        background: var(--red);
+        color: #fff;
+        font-weight: 700;
+        font-size: 0.9rem;
+      }
+      ol.steps b {
+        color: var(--text);
+      }
+      code {
+        background: #000;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 2px 7px;
+        font-family: "Consolas", ui-monospace, monospace;
+        font-size: 0.9em;
+      }
+
+      /* FAQ */
+      details {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 0 18px;
+        margin-bottom: 10px;
+      }
+      details[open] {
+        border-color: #3a3a45;
+      }
+      summary {
+        cursor: pointer;
+        font-weight: 600;
+        padding: 16px 0;
+        list-style: none;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      summary::-webkit-details-marker {
+        display: none;
+      }
+      summary::after {
+        content: "+";
+        color: var(--muted);
+        font-size: 1.3rem;
+      }
+      details[open] summary::after {
+        content: "\2013";
+      }
+      details p {
+        margin: 0 0 16px;
+        color: var(--muted);
+      }
+
+      footer {
+        text-align: center;
+        color: var(--muted);
+        font-size: 0.85rem;
+        padding: 40px 0 60px;
+        border-top: 1px solid var(--line);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="hero">
+        <img class="logo" src="icon.png" alt="ShakeChecker logo" />
+        <h1>ShakeChecker</h1>
+        <p class="tag">
+          A live catch-rate overlay for PokeMMO. See the exact catch % for every
+          Poke Ball during wild battles — read straight off your screen.
+        </p>
+        <div class="cta">
+          <a class="btn btn-primary" href="https://github.com/ghostpixxel/ShakeChecker/releases/latest"
+            >Download for Windows</a
+          >
+          <a class="btn btn-ghost" href="https://github.com/ghostpixxel/ShakeChecker">View on GitHub</a>
+        </div>
+        <div class="sub">Windows 10/11 · free &amp; open source</div>
+      </header>
+
+      <p class="trust">
+        <b>Strictly read-only &amp; safe.</b> ShakeChecker only captures the screen and draws an
+        overlay. It never sends inputs, never reads game memory, never modifies the client. A PokeMMO
+        staff member confirmed that OCR&nbsp;+&nbsp;overlays with no game inputs are fine and not
+        against the rules.
+      </p>
+
+      <section id="features">
+        <h2>What it does</h2>
+        <div class="grid">
+          <div class="card">
+            <h3>Live catch rates</h3>
+            <p>
+              Every Poke Ball's catch % recomputed each frame from the enemy's HP, status and turn
+              — using PokeMMO's actual catch formula.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Smart ball logic</h3>
+            <p>
+              Quick, Timer, Nest, Net, Dusk (cave &amp; night), Dream (sleep turns) and Repeat
+              (catch chain) are all modelled correctly.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Hordes &amp; doubles</h3>
+            <p>
+              Waits for a single catchable Pokemon to remain and reads its status correctly even as
+              a horde thins out.
+            </p>
+          </div>
+          <div class="card">
+            <h3>"Missing here" dex</h3>
+            <p>
+              Reads your location from the HUD and lists the species you still need on that route —
+              per PokeMMO account.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Stays out of the way</h3>
+            <p>
+              A click-through overlay docked to the game window. Input passes straight through to
+              the game underneath.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Any window size</h3>
+            <p>
+              Works at any resolution or aspect ratio — even if you resize the game window in the
+              middle of a battle.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section id="screenshots">
+        <h2>See it in action</h2>
+        <div class="shots">
+          <!-- Drop your screenshots / a demo GIF into docs/img/ (see docs/img/README.md).
+               Missing images hide themselves so the page never looks broken. -->
+          <img
+            src="img/overlay-battle.png"
+            alt="ShakeChecker overlay during a wild battle"
+            onerror="this.style.display='none'"
+          />
+          <img
+            src="img/dex-panel.png"
+            alt="ShakeChecker missing-here dex panel"
+            onerror="this.style.display='none'"
+          />
+        </div>
+      </section>
+
+      <section id="install">
+        <h2>Getting started</h2>
+        <ol class="steps">
+          <li>
+            <b>Download</b> the latest
+            <a href="https://github.com/ghostpixxel/ShakeChecker/releases/latest">release zip</a>
+            and extract it anywhere.
+          </li>
+          <li>Run <code>ShakeChecker.exe</code>.</li>
+          <li>
+            First launch only: Windows SmartScreen may say "Windows protected your PC" →
+            <b>More info → Run anyway</b> (the app is unsigned).
+          </li>
+          <li>Play PokeMMO in windowed or borderless mode (English client). The overlay appears in battles.</li>
+        </ol>
+      </section>
+
+      <section id="faq">
+        <h2>FAQ</h2>
+
+        <details>
+          <summary>Is this allowed? Will I get banned?</summary>
+          <p>
+            A PokeMMO staff member confirmed that "OCR and overlays that make no game inputs are
+            fine and not against the rules." ShakeChecker is exactly that: it reads the screen and
+            shows an overlay, and never sends any input to the game.
+          </p>
+        </details>
+
+        <details>
+          <summary>Is it a bot? Does it automate anything?</summary>
+          <p>
+            No. It never presses keys or clicks into the game. You play and throw balls yourself —
+            it only displays information. There is no automation of any kind.
+          </p>
+        </details>
+
+        <details>
+          <summary>Does it read game memory or modify the client?</summary>
+          <p>
+            No. It captures pixels from the screen (the same thing you see) and draws a separate
+            overlay window. It does not read process memory, inject code, or change any game file.
+          </p>
+        </details>
+
+        <details>
+          <summary>Why does Windows say "Windows protected your PC"?</summary>
+          <p>
+            The app is unsigned (code-signing certificates are expensive for a free tool), so
+            SmartScreen warns on first launch. Click <b>More info → Run anyway</b>. The full source
+            is on GitHub if you'd rather build it yourself.
+          </p>
+        </details>
+
+        <details>
+          <summary>Does it connect to the internet or collect data?</summary>
+          <p>
+            No. It makes no network connections. Your per-account caught lists are stored locally in
+            <code>%APPDATA%\ShakeChecker</code> and never leave your machine.
+          </p>
+        </details>
+
+        <details>
+          <summary>My antivirus flagged it.</summary>
+          <p>
+            Apps bundled with PyInstaller sometimes trigger false positives. ShakeChecker is open
+            source — you can read every line and build it yourself from the repo if you prefer.
+          </p>
+        </details>
+
+        <details>
+          <summary>Does it work at my resolution / window size?</summary>
+          <p>
+            Yes. All detection is based on fractions of the window, not fixed pixels, so it works at
+            any size or aspect ratio — and keeps working if you resize mid-battle.
+          </p>
+        </details>
+
+        <details>
+          <summary>Mac or Linux?</summary>
+          <p>Windows 10/11 only for now.</p>
+        </details>
+
+        <details>
+          <summary>How do I update?</summary>
+          <p>
+            Download the newest
+            <a href="https://github.com/ghostpixxel/ShakeChecker/releases/latest">release</a> and
+            replace the old folder. Your caught lists in <code>%APPDATA%\ShakeChecker</code> are
+            kept.
+          </p>
+        </details>
+      </section>
+
+      <footer>
+        ShakeChecker is a fan-made, read-only tool and is not affiliated with PokeMMO or Nintendo /
+        The Pokemon Company.<br />
+        <a href="https://github.com/ghostpixxel/ShakeChecker">GitHub</a> ·
+        <a href="https://github.com/ghostpixxel/ShakeChecker/releases/latest">Download</a> ·
+        <a href="https://github.com/ghostpixxel/ShakeChecker/issues">Report an issue</a>
+      </footer>
+    </div>
+  </body>
+</html>

@@ -12,6 +12,9 @@ you walk. Named after the shake checks in the catch formula.
 
 ![status](https://github.com/ghostpixxel/ShakeChecker/actions/workflows/ci.yml/badge.svg)
 
+**Website & FAQ:** <https://ghostpixxel.github.io/ShakeChecker/> ·
+**[Download the latest release](https://github.com/ghostpixxel/ShakeChecker/releases/latest)**
+
 ## Features
 
 - **Live catch rates** per ball during single wild encounters, using PokeMMO's
