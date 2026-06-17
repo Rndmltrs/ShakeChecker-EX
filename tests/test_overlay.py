@@ -95,6 +95,16 @@ def test_show_battle_hides_and_sorts_rows(qt_app):
     assert ov._last_order == ["Ultra Ball", "Poké Ball"]  # best % first, hidden dropped
 
 
+def test_overlay_height_shrinks_when_balls_hidden(qt_app):
+    ov = Overlay(["Poké Ball", "Great Ball", "Ultra Ball", "Net Ball"])
+    probs = {"Poké Ball": 0.2, "Great Ball": 0.3, "Ultra Ball": 0.4, "Net Ball": 0.5}
+    ov.show_battle(1, "X", 45, 1, probs)  # all four rows
+    full = ov.height()
+    ov.set_hidden_names({"Great Ball", "Ultra Ball"})
+    ov.show_battle(1, "X", 45, 1, probs)  # two rows
+    assert ov.height() < full  # window got shorter, not just the rows spread apart
+
+
 def test_level_rendered_next_to_name(qt_app):
     ov = Overlay(BALLS)
     ov.show_battle(66, "Machop", 180, 2, {}, level=6)

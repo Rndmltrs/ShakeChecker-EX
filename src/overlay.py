@@ -148,7 +148,8 @@ class Overlay(QWidget):
         self._mono = QFont("Consolas")
         self._mono.setStyleHint(QFont.StyleHint.Monospace)
 
-        root = QVBoxLayout(self)
+        self._root = QVBoxLayout(self)
+        root = self._root
         root.setContentsMargins(0, 0, 0, 0)
         panel = QFrame(objectName="panel")  # type: ignore[call-arg]  # PyQt6 accepts QObject kwargs
         panel.setStyleSheet(
@@ -209,9 +210,6 @@ class Overlay(QWidget):
             self._ball_icons[name] = icon
             self._ball_name_labels[name] = label
             self._pct_labels[name] = pct
-        # excess vertical space collapses into this stretch, so with fewer balls the
-        # rows stay tightly spaced (the window shrinks) instead of spreading apart.
-        self._col.addStretch(1)
 
         self.apply_scale(1.0)  # set fonts, sprites, widths at full size
 
@@ -267,6 +265,7 @@ class Overlay(QWidget):
             self._set_sprite(dex)
         self.adjustSize()
         self._last_pos = None
+        self._last_order = None  # row heights changed -> recompute the fixed height
 
     def show_battle(
         self,
@@ -318,12 +317,14 @@ class Overlay(QWidget):
             roww.setVisible(False)
         for name in order:
             roww = self._ball_rows[name]
-            # insert before the trailing stretch (the layout's last item) so rows
-            # stay top-aligned and tightly spaced
-            self._col.insertWidget(self._col.count() - 1, roww)
+            self._col.addWidget(roww)
             roww.setVisible(True)
-        self._col.invalidate()  # drop the stale size hint so the window shrinks to fit
-        self.adjustSize()
+        # Pin the window to EXACTLY the content height: adjustSize() doesn't reliably
+        # shrink this frameless translucent window, leaving a tall empty panel below
+        # the rows when balls are filtered. Forcing the height also means the layout
+        # has no spare space to spread between rows, so spacing stays tight.
+        self._root.activate()
+        self.setFixedHeight(self.sizeHint().height())
 
     def hide_battle(self) -> None:
         if self._movie is not None:
