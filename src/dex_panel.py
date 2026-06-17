@@ -86,7 +86,7 @@ def rarity_color_hex(rarity: str) -> str:
 
 def _icon_pixmap(kind: str, size: int, color: str) -> QPixmap:
     """A small monochrome header icon drawn in the overlay's own colour (so it
-    matches the panel instead of an OS emoji): 'gear' (profiles) or 'info'."""
+    matches the panel instead of an OS emoji): 'gear', 'ball' or 'info'."""
     pm = QPixmap(size, size)
     pm.fill(Qt.GlobalColor.transparent)
     p = QPainter(pm)
@@ -106,6 +106,13 @@ def _icon_pixmap(kind: str, size: int, color: str) -> QPixmap:
                 QPointF(cx + math.cos(a) * size * 0.33, cy + math.sin(a) * size * 0.33),
                 QPointF(cx + math.cos(a) * size * 0.46, cy + math.sin(a) * size * 0.46),
             )
+    elif kind == "ball":
+        p.setPen(QPen(c, size * 0.10))
+        p.drawEllipse(QPointF(cx, cy), size * 0.40, size * 0.40)  # ball outline
+        p.drawLine(QPointF(cx - size * 0.40, cy), QPointF(cx + size * 0.40, cy))  # band
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(c)
+        p.drawEllipse(QPointF(cx, cy), size * 0.14, size * 0.14)  # centre button
     else:  # info
         p.setPen(QPen(c, size * 0.10))
         p.drawEllipse(QPointF(cx, cy), size * 0.42, size * 0.42)
@@ -145,6 +152,7 @@ class DexPanel(QWidget):
         self._click_through: bool | None = None  # current WS_EX_TRANSPARENT state
         self._legend: QWidget | None = None
         self._profiles: QWidget | None = None  # profile management popup
+        self._balls: QWidget | None = None  # ball-picker popup
         self._rows: list[dict] = []  # reused row-widget pool, grown as needed
 
         # callbacks the app wires in (no-ops until set)
@@ -153,6 +161,10 @@ class DexPanel(QWidget):
         self.on_create_profile: Callable[[str], None] | None = None
         self.on_delete_profile: Callable[[str], None] | None = None
         self.get_profiles: Callable[[], tuple[str | None, list[str]]] | None = None
+        # ball picker: toggle one, set all, and read (balls=[(id, name)], hidden ids)
+        self.on_toggle_ball: Callable[[str], None] | None = None
+        self.on_set_all_balls: Callable[[bool], None] | None = None
+        self.get_ball_state: Callable[[], tuple[list[tuple[str, str]], set[str]]] | None = None
 
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -191,12 +203,16 @@ class DexPanel(QWidget):
         self._profile_btn = QPushButton()
         self._profile_btn.setToolTip("Profiles: create / load / delete")
         self._profile_btn.clicked.connect(self._toggle_profiles)
+        self._balls_btn = QPushButton()
+        self._balls_btn.setToolTip("Choose which balls to show")
+        self._balls_btn.clicked.connect(self._toggle_balls)
         self._info_btn = QPushButton()
         self._info_btn.setToolTip("Rarity colour legend")
         self._info_btn.clicked.connect(self._toggle_legend)
-        for b in (self._profile_btn, self._info_btn):
+        for b in (self._profile_btn, self._balls_btn, self._info_btn):
             b.setCursor(Qt.CursorShape.PointingHandCursor)
         self._bar.addWidget(self._profile_btn)
+        self._bar.addWidget(self._balls_btn)
         self._bar.addWidget(self._info_btn)
         self._col.addLayout(self._bar)
 
@@ -249,7 +265,11 @@ class DexPanel(QWidget):
         self._title.setFont(self._font(self._px(BASE_TITLE_PX), bold=True))
         self._subtitle.setFont(self._font(self._px(BASE_SUB_PX)))
         isz = self._px(BASE_ICON_PX)
-        for btn, kind in ((self._profile_btn, "gear"), (self._info_btn, "info")):
+        for btn, kind in (
+            (self._profile_btn, "gear"),
+            (self._balls_btn, "ball"),
+            (self._info_btn, "info"),
+        ):
             btn.setIcon(QIcon(_icon_pixmap(kind, isz, "#cfd2d6")))
             btn.setIconSize(QSize(isz, isz))
             btn.setFixedSize(isz + self._px(6), isz + self._px(6))
@@ -298,7 +318,7 @@ class DexPanel(QWidget):
 
     def hide_panel(self) -> None:
         self._hover.stop()
-        for popup in (self._legend, self._profiles):
+        for popup in (self._legend, self._profiles, self._balls):
             if popup is not None:
                 popup.hide()
         for r in self._rows:  # stop GIFs while hidden; they reload on re-show
@@ -326,7 +346,7 @@ class DexPanel(QWidget):
         if not self.isVisible():
             return
         over = self.frameGeometry().contains(QCursor.pos())
-        for popup in (self._legend, self._profiles):
+        for popup in (self._legend, self._profiles, self._balls):
             if popup is not None and popup.isVisible():
                 over = over or popup.frameGeometry().contains(QCursor.pos())
         self._apply_click_through(not over)
@@ -460,6 +480,64 @@ class DexPanel(QWidget):
             lab.setFont(self._font(12))
             box.addWidget(lab)
         return w
+
+    # --- ball picker (which balls the catch overlay shows) ---
+
+    def _toggle_balls(self) -> None:
+        if self._balls is not None and self._balls.isVisible():
+            self._balls.hide()
+            return
+        self._open_balls()
+
+    def _open_balls(self) -> None:
+        if self._balls is not None:
+            self._balls.close()
+        self._balls = self._build_balls()
+        self._balls.move(self._balls_btn.mapToGlobal(self._balls_btn.rect().bottomLeft()))
+        self._balls.show()
+
+    def _build_balls(self) -> QWidget:
+        balls, hidden = self.get_ball_state() if self.get_ball_state else ([], set())
+        w, box = self._popup_window("balls")
+        head = QLabel("Show balls")
+        head.setFont(self._font(12, bold=True))
+        head.setStyleSheet("color: #ffffff;")
+        box.addWidget(head)
+        icon_h = self._px(BASE_SPRITE_H)
+        for ball_id, ball_name in balls:
+            shown = ball_id not in hidden
+            sw = QPushButton(("✓  " if shown else "    ") + ball_name)
+            sw.setFont(self._font(12))
+            sw.setCursor(Qt.CursorShape.PointingHandCursor)
+            sw.setIcon(QIcon(self._loader.ball_pixmap(ball_name, icon_h)))
+            sw.setIconSize(QSize(icon_h, icon_h))
+            shade = "#eeeeee" if shown else "#777777"
+            sw.setStyleSheet(f"QPushButton {{ text-align: left; color: {shade}; }}")
+            sw.clicked.connect(lambda _=False, i=ball_id: self._toggle_ball(i))
+            box.addWidget(sw)
+        row = QHBoxLayout()
+        for text, vis in (("All", True), ("None", False)):
+            b = QPushButton(text)
+            b.setFont(self._font(11))
+            b.setCursor(Qt.CursorShape.PointingHandCursor)
+            b.setStyleSheet("QPushButton { color: #9aa0aa; }")
+            b.clicked.connect(lambda _=False, v=vis: self._set_all_balls(v))
+            row.addWidget(b)
+        row.addStretch(1)
+        cont = QWidget()
+        cont.setLayout(row)
+        box.addWidget(cont)
+        return w
+
+    def _toggle_ball(self, ball_id: str) -> None:
+        if self.on_toggle_ball is not None:
+            self.on_toggle_ball(ball_id)
+        self._open_balls()  # rebuild so the check state updates, popup stays open
+
+    def _set_all_balls(self, visible: bool) -> None:
+        if self.on_set_all_balls is not None:
+            self.on_set_all_balls(visible)
+        self._open_balls()
 
     # --- internals ---
 
@@ -600,6 +678,9 @@ def _demo() -> None:
     app = QApplication(sys.argv)
     panel = DexPanel()
     panel.get_profiles = lambda: ("Red", ["Red", "Blue"])
+    panel.get_ball_state = lambda: ([("poke", "Poké Ball"), ("dusk", "Dusk Ball")], {"dusk"})
+    panel.on_toggle_ball = lambda i: print("toggle ball", i)
+    panel.on_set_all_balls = lambda v: print("set all balls", v)
     panel.on_toggle_caught = lambda d: print("toggle", d)
     panel.on_select_profile = lambda n: print("select", n)
     panel.on_create_profile = lambda n: print("create", n)

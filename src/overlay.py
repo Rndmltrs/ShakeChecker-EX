@@ -107,6 +107,15 @@ def phys_to_logical(px: int, py: int) -> tuple[int, int]:
     return round(lx), round(ly)
 
 
+def visible_ball_order(
+    ball_names: list[str], probs: dict[str, float], hidden: set[str]
+) -> list[str]:
+    """Balls to show in the overlay, best catch rate first. Drops hidden balls and
+    any without a probability; ties keep the original ball order (stable sort)."""
+    shown = [n for n in ball_names if n not in hidden and probs.get(n) is not None]
+    return sorted(shown, key=lambda n: probs[n], reverse=True)
+
+
 class Overlay(QWidget):
     def __init__(self, ball_names: list[str], loader: SpriteLoader | None = None) -> None:
         super().__init__()
@@ -118,7 +127,10 @@ class Overlay(QWidget):
         self._ball_icons: dict[str, QLabel] = {}
         self._ball_name_labels: dict[str, QLabel] = {}
         self._pct_labels: dict[str, QLabel] = {}
+        self._ball_rows: dict[str, QWidget] = {}  # one reorderable row widget per ball
         self._row_layouts: list[QHBoxLayout] = []
+        self._hidden_names: set[str] = set()  # balls the user chose to hide
+        self._last_order: list[str] | None = None  # skip reordering when unchanged
         self._scale = 0.0  # forces the first apply_scale to size everything
         self._panel_w = BASE_PANEL_W
         self._sprite_h = BASE_SPRITE_H
@@ -176,9 +188,12 @@ class Overlay(QWidget):
         line.setStyleSheet("color: rgba(255,255,255,40);")
         self._col.addWidget(line)
 
-        # one row per ball: icon + name (left) + percent (right)
+        # one row per ball: icon + name (left) + percent (right). Each row is its own
+        # widget so show_battle() can reorder (best % on top) and hide filtered balls.
         for name in self._ball_names:
-            row = QHBoxLayout()
+            roww = QWidget()
+            row = QHBoxLayout(roww)
+            row.setContentsMargins(0, 0, 0, 0)
             icon = QLabel()
             label = QLabel(name)
             label.setStyleSheet("color: #cfd2d6;")
@@ -188,11 +203,15 @@ class Overlay(QWidget):
             row.addWidget(label)
             row.addStretch(1)
             row.addWidget(pct)
-            self._col.addLayout(row)
+            self._col.addWidget(roww)
+            self._ball_rows[name] = roww
             self._row_layouts.append(row)
             self._ball_icons[name] = icon
             self._ball_name_labels[name] = label
             self._pct_labels[name] = pct
+        # excess vertical space collapses into this stretch, so with fewer balls the
+        # rows stay tightly spaced (the window shrinks) instead of spreading apart.
+        self._col.addStretch(1)
 
         self.apply_scale(1.0)  # set fonts, sprites, widths at full size
 
@@ -279,7 +298,32 @@ class Overlay(QWidget):
             else:
                 label.setText(f"{100 * prob:5.1f}%")
                 label.setStyleSheet(f"color: {prob_color_hex(prob)};")
+        self._reorder(visible_ball_order(self._ball_names, probs, self._hidden_names))
         self.show()
+
+    def set_hidden_names(self, names: set[str]) -> None:
+        """Choose which balls the overlay shows (by ball NAME). Hidden balls drop
+        out; the rest are sorted by catch rate on the next update."""
+        self._hidden_names = set(names)
+        self._last_order = None  # force a re-layout on the next show_battle
+
+    def _reorder(self, order: list[str]) -> None:
+        """Lay the ball rows out in `order` (best % first), hiding the rest. Skips
+        the layout work when the order hasn't changed."""
+        if order == self._last_order:
+            return
+        self._last_order = order
+        for roww in self._ball_rows.values():
+            self._col.removeWidget(roww)
+            roww.setVisible(False)
+        for name in order:
+            roww = self._ball_rows[name]
+            # insert before the trailing stretch (the layout's last item) so rows
+            # stay top-aligned and tightly spaced
+            self._col.insertWidget(self._col.count() - 1, roww)
+            roww.setVisible(True)
+        self._col.invalidate()  # drop the stale size hint so the window shrinks to fit
+        self.adjustSize()
 
     def hide_battle(self) -> None:
         if self._movie is not None:

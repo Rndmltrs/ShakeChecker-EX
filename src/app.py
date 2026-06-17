@@ -52,6 +52,7 @@ from hp_settler import HpSettler
 from location_reader import is_cave_location, read_game_clock, read_location
 from name_reader import NameReader
 from overlay import Overlay, scale_for_window
+from settings_store import Settings
 from status_settler import StatusSettler
 from turn_tracker import TurnTracker
 from window_capture import (
@@ -347,6 +348,8 @@ class LiveLoop:
         self.dex = dex  # None if the dex data couldn't be loaded
         self.dex_panel = dex_panel  # overworld "missing here" overlay
         self.balls = load_balls()
+        self.settings = Settings.load(USERDATA)  # which balls the overlay shows
+        self.overlay.set_hidden_names(self._hidden_ball_names())
         self.status_rates = load_status_rates()
         self.name_reader = None if species_override else NameReader(cal.name, SPECIES_PATH)
         self.battle_text = BattleTextReader(cal.battle_text, TEMPLATES_DIR)
@@ -381,6 +384,9 @@ class LiveLoop:
             self.dex_panel.on_create_profile = self._dex_use_profile
             self.dex_panel.on_delete_profile = self._dex_delete_profile
             self.dex_panel.get_profiles = self._dex_profiles
+            self.dex_panel.on_toggle_ball = self._toggle_ball
+            self.dex_panel.on_set_all_balls = self._set_all_balls
+            self.dex_panel.get_ball_state = self._ball_state
 
     def start(self) -> None:
         log.info(f"ShakeChecker v{paths.APP_VERSION}")
@@ -793,6 +799,23 @@ class LiveLoop:
     def _dex_profiles(self) -> tuple[str | None, list[str]]:
         cfg = AccountConfig.load(USERDATA)
         return cfg.active, cfg.accounts
+
+    # --- ball picker (settings -> which balls the overlay shows) ---
+
+    def _hidden_ball_names(self) -> set[str]:
+        """Hidden ball NAMES for the overlay (it keys by name; settings store ids)."""
+        return {b["name"] for b in self.balls if b["id"] in self.settings.hidden_balls}
+
+    def _ball_state(self) -> tuple[list[tuple[str, str]], set[str]]:
+        return [(b["id"], b["name"]) for b in self.balls], set(self.settings.hidden_balls)
+
+    def _toggle_ball(self, ball_id: str) -> None:
+        self.settings.toggle_ball(ball_id)
+        self.overlay.set_hidden_names(self._hidden_ball_names())
+
+    def _set_all_balls(self, visible: bool) -> None:
+        self.settings.set_all_balls([b["id"] for b in self.balls], visible)
+        self.overlay.set_hidden_names(self._hidden_ball_names())
 
 
 def build_dex(account_override: str | None) -> DexSession | None:

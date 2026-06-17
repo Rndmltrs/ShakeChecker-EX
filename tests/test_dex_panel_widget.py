@@ -98,3 +98,23 @@ def test_profile_menu_uses_callback_list(qt_app):
     p.get_profiles = lambda: ("Red", ["Red", "Blue"])
     active, names = p.get_profiles()
     assert active == "Red" and names == ["Red", "Blue"]
+
+
+def test_ball_picker_toggle_invokes_callback(qt_app):
+    toggled: list[str] = []
+    p = DexPanel()
+    p.get_ball_state = lambda: ([("poke", "Poké Ball"), ("dusk", "Dusk Ball")], {"dusk"})
+    p.on_toggle_ball = toggled.append
+    p._open_balls()  # builds the popup from get_ball_state (no crash on missing sprites)
+    assert p._balls is not None
+    p._toggle_ball("poke")
+    assert toggled == ["poke"]
+
+
+def test_ball_picker_set_all_invokes_callback(qt_app):
+    calls: list[bool] = []
+    p = DexPanel()
+    p.get_ball_state = lambda: ([("poke", "Poké Ball")], set())
+    p.on_set_all_balls = calls.append
+    p._set_all_balls(False)
+    assert calls == [False]

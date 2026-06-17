@@ -12,9 +12,28 @@ from overlay import (
     scale_for_window,
     status_badge,
     subheader_text,
+    visible_ball_order,
 )
 
 # --- pure helpers (no Qt) ---
+
+
+def test_visible_ball_order_sorts_descending():
+    names = ["Poke", "Great", "Ultra"]
+    probs = {"Poke": 0.2, "Great": 0.5, "Ultra": 0.35}
+    assert visible_ball_order(names, probs, set()) == ["Great", "Ultra", "Poke"]
+
+
+def test_visible_ball_order_drops_hidden_and_missing():
+    names = ["Poke", "Great", "Ultra", "Net"]
+    probs = {"Poke": 0.2, "Great": 0.5, "Ultra": 0.35}  # Net has no prob
+    assert visible_ball_order(names, probs, {"Great"}) == ["Ultra", "Poke"]
+
+
+def test_visible_ball_order_stable_on_ties():
+    names = ["Poke", "Great", "Ultra"]
+    probs = {"Poke": 0.4, "Great": 0.4, "Ultra": 0.4}
+    assert visible_ball_order(names, probs, set()) == ["Poke", "Great", "Ultra"]
 
 
 def test_prob_color_thresholds():
@@ -64,6 +83,16 @@ def test_show_battle_sets_header_and_percentages(qt_app):
     assert "ff5555" in ov._pct_labels["Poké Ball"].styleSheet()  # red, <50%
     assert "ffcc44" in ov._pct_labels["Great Ball"].styleSheet()  # yellow, 60%
     assert "55dd66" in ov._pct_labels["Quick Ball"].styleSheet()  # green, 80%
+
+
+def test_show_battle_hides_and_sorts_rows(qt_app):
+    ov = Overlay(["Poké Ball", "Great Ball", "Ultra Ball"])
+    ov.set_hidden_names({"Great Ball"})
+    ov.show_battle(1, "X", 45, 1, {"Poké Ball": 0.2, "Great Ball": 0.5, "Ultra Ball": 0.4})
+    assert ov._ball_rows["Great Ball"].isHidden()  # filtered out
+    assert not ov._ball_rows["Ultra Ball"].isHidden()
+    assert not ov._ball_rows["Poké Ball"].isHidden()
+    assert ov._last_order == ["Ultra Ball", "Poké Ball"]  # best % first, hidden dropped
 
 
 def test_level_rendered_next_to_name(qt_app):
