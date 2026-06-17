@@ -3,32 +3,42 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>ShakeChecker — live catch-rate overlay for PokeMMO</title>
+    <title>ShakeChecker — live catch rates for PokeMMO</title>
     <meta
       name="description"
-      content="ShakeChecker is a strictly read-only screen overlay for PokeMMO that shows live catch-rate percentages per Poke Ball during wild battles. No inputs, no memory reading — just an overlay."
+      content="A read-only overlay for PokeMMO that shows your catch rate for every ball, the moment you're deciding which to throw. Free and open source for Windows."
     />
     <link rel="icon" href="icon.png" />
-    <!-- Open Graph (nice link previews when shared) -->
+    <meta property="og:type" content="website" />
     <meta property="og:title" content="ShakeChecker — live catch rates for PokeMMO" />
     <meta
       property="og:description"
-      content="Read-only overlay that shows live catch % per Poke Ball during wild battles. No game inputs."
+      content="See your catch rate for every ball, live, while you play. A read-only overlay. Free and open source."
     />
     <meta property="og:image" content="icon.png" />
-    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap"
+      rel="stylesheet"
+    />
     <style>
       :root {
-        --bg: #0f0f12;
-        --bg-soft: #16161b;
-        --card: #1b1b22;
-        --line: #2a2a33;
-        --text: #ececf0;
-        --muted: #a0a0ad;
-        --red: #ee4b4b;
-        --red-soft: #ff6a6a;
-        --green: #55dd66;
-        --radius: 14px;
+        --shell: #7c1d1d;
+        --shell-dark: #5a1212;
+        --shell-edge: #9a2a2a;
+        --screen: #0d2a15;
+        --screen-edge: #1c4a28;
+        --phos: #93e072;
+        --phos-dim: #5fa84e;
+        --ink: #f3e8d8;
+        --muted: #d8c3ad;
+        --yellow: #f2c14e;
+        --blue: #3f8ad6;
+        --ok: #93e072;
+        --pixel: "Press Start 2P", monospace;
+        --body: "VT323", "Consolas", monospace;
       }
       * {
         box-sizing: border-box;
@@ -38,416 +48,825 @@
       }
       body {
         margin: 0;
-        background: radial-gradient(1200px 600px at 50% -10%, #20131a 0%, var(--bg) 55%);
-        color: var(--text);
-        font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-        -webkit-font-smoothing: antialiased;
+        font-family: var(--body);
+        font-size: 21px;
+        line-height: 1.45;
+        color: var(--ink);
+        background-color: var(--shell);
+        background-image:
+          repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.16) 0 2px, transparent 2px 4px),
+          repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.1) 0 2px, transparent 2px 4px),
+          radial-gradient(1200px 700px at 50% -200px, var(--shell-edge), var(--shell) 60%, var(--shell-dark));
+        background-attachment: fixed;
+      }
+      h1,
+      h2,
+      h3,
+      .pix {
+        font-family: var(--pixel);
+        line-height: 1.5;
       }
       a {
-        color: var(--red-soft);
+        color: var(--yellow);
         text-decoration: none;
       }
       a:hover {
         text-decoration: underline;
       }
       .wrap {
-        max-width: 960px;
+        max-width: 1000px;
         margin: 0 auto;
-        padding: 0 20px;
+        padding: 0 18px;
+      }
+      .eyebrow {
+        font-family: var(--pixel);
+        font-size: 10px;
+        letter-spacing: 2px;
+        color: var(--phos);
+        text-transform: uppercase;
+      }
+      .screen {
+        background: var(--screen);
+        border: 4px solid #081c0e;
+        box-shadow:
+          0 0 0 4px var(--screen-edge),
+          0 10px 0 4px rgba(0, 0, 0, 0.35);
+        border-radius: 4px;
+        position: relative;
+        overflow: hidden;
+      }
+      .screen::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.18) 0 1px, transparent 1px 3px);
+        opacity: 0.5;
+      }
+      .screen .inner {
+        position: relative;
+        z-index: 1;
+        padding: 26px;
       }
       .btn {
-        display: inline-block;
-        padding: 13px 22px;
-        border-radius: 999px;
-        font-weight: 700;
-        border: 1px solid transparent;
-        transition: transform 0.06s ease;
+        font-family: var(--pixel);
+        font-size: 12px;
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 14px 18px;
+        border: 3px solid #000;
+        border-radius: 4px;
+        box-shadow: 0 4px 0 #000;
+        cursor: pointer;
+        transition:
+          transform 0.05s,
+          box-shadow 0.05s;
       }
       .btn:hover {
         text-decoration: none;
-        transform: translateY(-1px);
+        transform: translateY(2px);
+        box-shadow: 0 2px 0 #000;
       }
       .btn-primary {
-        background: var(--red);
-        color: #fff;
+        background: var(--yellow);
+        color: #2a1a00;
+      }
+      .btn-secondary {
+        background: var(--blue);
+        color: #03101e;
       }
       .btn-ghost {
-        border-color: var(--line);
-        color: var(--text);
+        background: transparent;
+        color: var(--ink);
+        border-color: rgba(255, 255, 255, 0.4);
+        box-shadow: 0 4px 0 rgba(0, 0, 0, 0.4);
       }
-
-      /* Hero */
-      header.hero {
-        text-align: center;
-        padding: 70px 0 40px;
+      nav {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        background: rgba(58, 12, 12, 0.92);
+        border-bottom: 3px solid #000;
       }
-      .hero img.logo {
-        width: 120px;
-        height: 120px;
-        border-radius: 26px;
-        box-shadow: 0 10px 40px rgba(238, 75, 75, 0.25);
+      nav .row {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        padding: 12px 0;
+      }
+      nav .brand {
+        font-family: var(--pixel);
+        font-size: 13px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      nav .brand img {
+        width: 26px;
+        height: 26px;
+        image-rendering: pixelated;
+      }
+      nav .links {
+        margin-left: auto;
+        display: flex;
+        gap: 16px;
+        align-items: center;
+      }
+      nav .links a.nl {
+        font-family: var(--pixel);
+        font-size: 10px;
+        color: var(--muted);
+        letter-spacing: 1px;
+      }
+      nav .links a.nl:hover {
+        color: var(--phos);
+        text-decoration: none;
+      }
+      @media (max-width: 760px) {
+        nav .links a.nl {
+          display: none;
+        }
+      }
+      .hero {
+        display: grid;
+        grid-template-columns: 1.1fr 0.9fr;
+        gap: 30px;
+        align-items: center;
+        padding: 56px 0 40px;
       }
       .hero h1 {
-        font-size: clamp(2.2rem, 5vw, 3.4rem);
+        font-size: 30px;
+        margin: 14px 0 0;
+        color: var(--phos);
+        text-shadow: 0 3px 0 #000;
+      }
+      .hero .lead {
+        font-size: 26px;
         margin: 18px 0 6px;
-        letter-spacing: -0.5px;
       }
-      .hero .tag {
+      .hero .sub {
+        font-size: 21px;
         color: var(--muted);
-        font-size: clamp(1.05rem, 2.2vw, 1.3rem);
-        max-width: 620px;
-        margin: 0 auto 26px;
+        max-width: 46ch;
       }
-      .cta {
+      .hero .ctas {
         display: flex;
-        gap: 12px;
-        justify-content: center;
+        gap: 14px;
         flex-wrap: wrap;
+        margin: 22px 0 12px;
       }
-      .sub {
-        color: var(--muted);
-        font-size: 0.85rem;
-        margin-top: 14px;
+      .hero .meta {
+        font-family: var(--pixel);
+        font-size: 9px;
+        color: var(--phos-dim);
+        letter-spacing: 1px;
       }
-
-      /* Trust banner */
-      .trust {
-        background: linear-gradient(90deg, rgba(85, 221, 102, 0.08), rgba(85, 221, 102, 0.02));
-        border: 1px solid rgba(85, 221, 102, 0.25);
-        border-radius: var(--radius);
-        padding: 16px 20px;
-        margin: 10px 0 50px;
-        text-align: center;
-        color: #cfeed4;
-        font-size: 0.97rem;
+      .hero-art {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 22px;
       }
-      .trust b {
-        color: var(--green);
+      @media (max-width: 820px) {
+        .hero {
+          grid-template-columns: 1fr;
+          text-align: center;
+          padding-top: 36px;
+        }
+        .hero .sub {
+          margin-inline: auto;
+        }
+        .hero .ctas {
+          justify-content: center;
+        }
+        .hero-art {
+          order: -1;
+        }
       }
-
+      .ball {
+        width: 200px;
+        height: 200px;
+        transform: rotate(-16deg);
+        filter: drop-shadow(8px 14px 0 rgba(0, 0, 0, 0.45));
+        animation: wobble 3.2s ease-in-out infinite;
+      }
+      @keyframes wobble {
+        0%,
+        92%,
+        100% {
+          transform: rotate(-16deg);
+        }
+        94% {
+          transform: rotate(-22deg);
+        }
+        96% {
+          transform: rotate(-10deg);
+        }
+        98% {
+          transform: rotate(-18deg);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .ball {
+          animation: none;
+        }
+      }
+      .mock {
+        width: 250px;
+        font-size: 18px;
+      }
+      .mock .inner {
+        padding: 14px 16px;
+      }
+      .mock .title {
+        display: flex;
+        justify-content: space-between;
+        color: var(--phos);
+        border-bottom: 2px solid var(--screen-edge);
+        padding-bottom: 8px;
+        margin-bottom: 8px;
+      }
+      .mock .badge {
+        font-family: var(--pixel);
+        font-size: 8px;
+        background: #2a2a2a;
+        color: #ddd;
+        padding: 3px 5px;
+        align-self: center;
+      }
+      .mock .ballrow {
+        display: flex;
+        justify-content: space-between;
+        color: var(--ink);
+      }
+      .mock .g {
+        color: var(--ok);
+      }
+      .mock .y {
+        color: var(--yellow);
+      }
+      .mock .r {
+        color: #ff6b6b;
+      }
       section {
-        padding: 40px 0;
-        border-top: 1px solid var(--line);
+        padding: 44px 0;
       }
-      h2 {
-        font-size: 1.6rem;
-        margin: 0 0 24px;
+      .sec-head {
+        text-align: center;
+        margin-bottom: 26px;
       }
-
+      .sec-head h2 {
+        font-size: 19px;
+        color: var(--phos);
+        margin: 8px 0 6px;
+        text-shadow: 0 2px 0 #000;
+      }
+      .sec-head p {
+        color: var(--muted);
+        margin: 0;
+      }
       .grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        grid-template-columns: repeat(3, 1fr);
         gap: 16px;
       }
-      .card {
-        background: var(--card);
-        border: 1px solid var(--line);
-        border-radius: var(--radius);
-        padding: 20px;
+      @media (max-width: 820px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+      .card .inner {
+        padding: 18px;
       }
       .card h3 {
-        margin: 0 0 8px;
-        font-size: 1.1rem;
+        font-size: 12px;
+        color: var(--phos);
+        margin: 0 0 10px;
       }
       .card p {
         margin: 0;
         color: var(--muted);
-        font-size: 0.95rem;
       }
-
-      .shots {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-        gap: 16px;
+      .carousel {
+        position: relative;
+        max-width: 860px;
+        margin: 0 auto;
       }
-      .shots img {
+      .viewport {
+        overflow: hidden;
+      }
+      .track {
+        display: flex;
+        transition: transform 0.3s ease;
+      }
+      .slide {
+        min-width: 100%;
+      }
+      .slide video {
         width: 100%;
-        border-radius: var(--radius);
-        border: 1px solid var(--line);
-        background: var(--bg-soft);
+        display: block;
+        background: #000;
+        aspect-ratio: 16 / 9;
       }
-
-      /* Steps */
-      ol.steps {
-        counter-reset: s;
-        list-style: none;
+      .slide .empty {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        aspect-ratio: 16 / 9;
+        color: var(--phos-dim);
+        text-align: center;
+        padding: 24px;
+      }
+      .carousel .arrow {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        background: var(--yellow);
+        color: #2a1a00;
+        border: 3px solid #000;
+        box-shadow: 0 3px 0 #000;
+        font-family: var(--pixel);
+        font-size: 14px;
+        width: 40px;
+        height: 40px;
+        cursor: pointer;
+        border-radius: 4px;
+      }
+      .carousel .arrow.prev {
+        left: -10px;
+      }
+      .carousel .arrow.next {
+        right: -10px;
+      }
+      .dots {
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+        margin-top: 16px;
+      }
+      .dots button {
+        width: 12px;
+        height: 12px;
+        border: 2px solid #000;
+        background: var(--screen-edge);
+        cursor: pointer;
         padding: 0;
-        margin: 0;
+        border-radius: 2px;
+      }
+      .dots button[aria-current="true"] {
+        background: var(--phos);
+      }
+      ol.steps {
+        list-style: none;
+        counter-reset: s;
+        margin: 0 auto;
+        padding: 0;
+        max-width: 760px;
       }
       ol.steps li {
         counter-increment: s;
         position: relative;
-        padding: 12px 0 12px 46px;
-        border-bottom: 1px solid var(--line);
+        padding: 14px 0 14px 54px;
+        border-bottom: 2px dashed var(--screen-edge);
         color: var(--muted);
       }
       ol.steps li:last-child {
         border-bottom: 0;
       }
+      ol.steps li b {
+        color: var(--ink);
+      }
       ol.steps li::before {
         content: counter(s);
         position: absolute;
         left: 0;
-        top: 10px;
-        width: 30px;
-        height: 30px;
+        top: 12px;
+        width: 34px;
+        height: 34px;
         display: grid;
         place-items: center;
-        border-radius: 50%;
-        background: var(--red);
-        color: #fff;
-        font-weight: 700;
-        font-size: 0.9rem;
-      }
-      ol.steps b {
-        color: var(--text);
+        font-family: var(--pixel);
+        font-size: 11px;
+        color: var(--phos);
+        background: var(--screen);
+        border: 3px solid #000;
+        border-radius: 4px;
       }
       code {
+        font-size: 18px;
         background: #000;
-        border: 1px solid var(--line);
-        border-radius: 6px;
-        padding: 2px 7px;
-        font-family: "Consolas", ui-monospace, monospace;
-        font-size: 0.9em;
+        color: var(--phos);
+        padding: 1px 7px;
+        border-radius: 3px;
       }
-
-      /* FAQ */
+      .safe .inner {
+        padding: 24px 26px;
+      }
+      .safe h3 {
+        font-size: 13px;
+        color: var(--phos);
+        margin: 0 0 8px;
+      }
+      .safe .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 14px;
+      }
+      .safe .chip {
+        font-family: var(--pixel);
+        font-size: 9px;
+        color: var(--ok);
+        border: 2px solid var(--screen-edge);
+        padding: 7px 9px;
+        border-radius: 3px;
+      }
+      .faq-group {
+        margin-bottom: 22px;
+      }
+      .faq-group > .eyebrow {
+        display: block;
+        margin: 0 0 10px 2px;
+      }
       details {
-        background: var(--card);
-        border: 1px solid var(--line);
-        border-radius: var(--radius);
-        padding: 0 18px;
-        margin-bottom: 10px;
-      }
-      details[open] {
-        border-color: #3a3a45;
+        border: 3px solid #000;
+        background: rgba(0, 0, 0, 0.18);
+        border-radius: 4px;
+        margin-bottom: 8px;
       }
       summary {
         cursor: pointer;
-        font-weight: 600;
-        padding: 16px 0;
         list-style: none;
+        padding: 13px 16px;
+        color: var(--ink);
         display: flex;
         justify-content: space-between;
-        align-items: center;
+        gap: 12px;
       }
       summary::-webkit-details-marker {
         display: none;
       }
       summary::after {
         content: "+";
-        color: var(--muted);
-        font-size: 1.3rem;
+        color: var(--phos);
       }
       details[open] summary::after {
         content: "\2013";
       }
-      details p {
-        margin: 0 0 16px;
+      details .ans {
+        padding: 0 16px 14px;
         color: var(--muted);
       }
-
       footer {
         text-align: center;
         color: var(--muted);
-        font-size: 0.85rem;
         padding: 40px 0 60px;
-        border-top: 1px solid var(--line);
+        margin-top: 20px;
+        border-top: 3px solid #000;
+      }
+      footer .links {
+        margin-top: 10px;
+        font-family: var(--pixel);
+        font-size: 9px;
       }
     </style>
   </head>
   <body>
-    <div class="wrap">
-      <header class="hero">
-        <img class="logo" src="icon.png" alt="ShakeChecker logo" />
-        <h1>ShakeChecker</h1>
-        <p class="tag">
-          A live catch-rate overlay for PokeMMO. See the exact catch % for every
-          Poke Ball during wild battles — read straight off your screen.
-        </p>
-        <div class="cta">
+    <nav>
+      <div class="wrap row">
+        <span class="brand"><img src="icon.png" alt="" /> ShakeChecker</span>
+        <span class="links">
+          <a class="nl" href="#features">Features</a>
+          <a class="nl" href="#video">Video</a>
+          <a class="nl" href="#faq">FAQ</a>
+          <a class="btn btn-ghost" href="https://github.com/ghostpixxel/ShakeChecker">GitHub</a>
           <a class="btn btn-primary" href="https://github.com/ghostpixxel/ShakeChecker/releases/latest"
-            >Download for Windows</a
+            >Download</a
           >
-          <a class="btn btn-ghost" href="https://github.com/ghostpixxel/ShakeChecker">View on GitHub</a>
+        </span>
+      </div>
+    </nav>
+
+    <header class="wrap hero">
+      <div>
+        <span class="eyebrow">Read-only overlay for PokeMMO</span>
+        <h1>ShakeChecker</h1>
+        <p class="lead">Know your catch rate for every ball, the moment you throw.</p>
+        <p class="sub">
+          A lightweight overlay that reads the battle off your screen and shows the catch rate of
+          every Poké&nbsp;Ball, right there in the game. No alt-tabbing, no calculators, no setup.
+        </p>
+        <div class="ctas">
+          <a class="btn btn-primary" href="https://github.com/ghostpixxel/ShakeChecker/releases/latest"
+            >⬇ Download for Windows</a
+          >
+          <a class="btn btn-secondary" href="https://github.com/ghostpixxel/ShakeChecker">GitHub</a>
         </div>
-        <div class="sub">Windows 10/11 · free &amp; open source</div>
-      </header>
+        <p class="meta">Windows 10/11 · Free &amp; open source</p>
+      </div>
 
-      <p class="trust">
-        <b>Strictly read-only &amp; safe.</b> ShakeChecker only captures the screen and draws an
-        overlay. It never sends inputs, never reads game memory, never modifies the client. A PokeMMO
-        staff member confirmed that OCR&nbsp;+&nbsp;overlays with no game inputs are fine and not
-        against the rules.
-      </p>
+      <div class="hero-art">
+        <svg class="ball" viewBox="0 0 64 64" aria-hidden="true">
+          <defs>
+            <clipPath id="c"><circle cx="32" cy="32" r="27" /></clipPath>
+          </defs>
+          <g clip-path="url(#c)">
+            <rect x="0" y="0" width="64" height="32" fill="#e2453f" />
+            <rect x="0" y="32" width="64" height="32" fill="#f4efe6" />
+            <rect x="0" y="28" width="64" height="8" fill="#0e0e12" />
+            <rect x="13" y="13" width="9" height="5" fill="#ff8d88" />
+          </g>
+          <circle cx="32" cy="32" r="27" fill="none" stroke="#0e0e12" stroke-width="5" />
+          <circle cx="32" cy="32" r="9" fill="#0e0e12" />
+          <circle cx="32" cy="32" r="6" fill="#f4efe6" stroke="#0e0e12" stroke-width="2" />
+          <circle cx="32" cy="32" r="2.4" fill="#cfeaff" />
+        </svg>
 
-      <section id="features">
-        <h2>What it does</h2>
-        <div class="grid">
-          <div class="card">
-            <h3>Live catch rates</h3>
-            <p>
-              Every Poke Ball's catch % recomputed each frame from the enemy's HP, status and turn
-              — using PokeMMO's actual catch formula.
-            </p>
+        <div class="mock screen">
+          <div class="inner">
+            <div class="title"><span>Gible</span><span class="badge">SLP</span></div>
+            <div class="ballrow"><span>Poké Ball</span><span class="r">23%</span></div>
+            <div class="ballrow"><span>Great Ball</span><span class="y">41%</span></div>
+            <div class="ballrow"><span>Ultra Ball</span><span class="g">68%</span></div>
+            <div class="ballrow"><span>Dusk Ball</span><span class="g">82%</span></div>
           </div>
-          <div class="card">
-            <h3>Smart ball logic</h3>
-            <p>
-              Quick, Timer, Nest, Net, Dusk (cave &amp; night), Dream (sleep turns) and Repeat
-              (catch chain) are all modelled correctly.
-            </p>
+        </div>
+      </div>
+    </header>
+
+    <section id="features" class="wrap">
+      <div class="sec-head">
+        <span class="eyebrow">Features</span>
+        <h2>Everything you need at the throw</h2>
+        <p>Real numbers, the right ball, drawn straight onto the game.</p>
+      </div>
+      <div class="grid">
+        <div class="card screen">
+          <div class="inner">
+            <h3>Best ball, instantly</h3>
+            <p>The catch rate for every ball, recalculated each turn as HP drops and status lands.</p>
           </div>
-          <div class="card">
-            <h3>Hordes &amp; doubles</h3>
-            <p>
-              Waits for a single catchable Pokemon to remain and reads its status correctly even as
-              a horde thins out.
-            </p>
+        </div>
+        <div class="card screen">
+          <div class="inner">
+            <h3>Knows the tricky balls</h3>
+            <p>Quick, Timer, Nest, Net, Dusk, Dream and Repeat are all handled with their real rules.</p>
           </div>
-          <div class="card">
-            <h3>"Missing here" dex</h3>
-            <p>
-              Reads your location from the HUD and lists the species you still need on that route —
-              per PokeMMO account.
-            </p>
+        </div>
+        <div class="card screen">
+          <div class="inner">
+            <h3>Hordes &amp; multi-battles</h3>
+            <p>Waits until a single catchable Pokémon remains, then reads its rate and status correctly.</p>
           </div>
-          <div class="card">
+        </div>
+        <div class="card screen">
+          <div class="inner">
+            <h3>Location Dex</h3>
+            <p>See which Pokémon you still need on the route you're standing on — tracked per account.</p>
+          </div>
+        </div>
+        <div class="card screen">
+          <div class="inner">
             <h3>Stays out of the way</h3>
-            <p>
-              A click-through overlay docked to the game window. Input passes straight through to
-              the game underneath.
-            </p>
+            <p>A click-through overlay. Your clicks pass straight through to the game underneath.</p>
           </div>
-          <div class="card">
+        </div>
+        <div class="card screen">
+          <div class="inner">
             <h3>Any window size</h3>
-            <p>
-              Works at any resolution or aspect ratio — even if you resize the game window in the
-              middle of a battle.
-            </p>
+            <p>Windowed or borderless, any resolution — resize mid-battle and it keeps reading.</p>
           </div>
         </div>
-      </section>
+      </div>
+    </section>
 
-      <section id="screenshots">
-        <h2>See it in action</h2>
-        <div class="shots">
-          <!-- Drop your screenshots / a demo GIF into docs/img/ (see docs/img/README.md).
-               Missing images hide themselves so the page never looks broken. -->
-          <img
-            src="img/overlay-battle.png"
-            alt="ShakeChecker overlay during a wild battle"
-            onerror="this.style.display='none'"
-          />
-          <img
-            src="img/dex-panel.png"
-            alt="ShakeChecker missing-here dex panel"
-            onerror="this.style.display='none'"
-          />
+    <section id="video" class="wrap">
+      <div class="sec-head">
+        <span class="eyebrow">See it in action</span>
+        <h2>Watch it read real battles</h2>
+        <p>Catch rates updating live as the fight plays out.</p>
+      </div>
+      <div class="carousel">
+        <div class="viewport">
+          <div class="track" id="track"></div>
         </div>
-      </section>
+        <button class="arrow prev" id="prev" aria-label="Previous video">‹</button>
+        <button class="arrow next" id="next" aria-label="Next video">›</button>
+      </div>
+      <div class="dots" id="dots"></div>
+    </section>
 
-      <section id="install">
-        <h2>Getting started</h2>
-        <ol class="steps">
-          <li>
-            <b>Download</b> the latest
-            <a href="https://github.com/ghostpixxel/ShakeChecker/releases/latest">release zip</a>
-            and extract it anywhere.
-          </li>
-          <li>Run <code>ShakeChecker.exe</code>.</li>
-          <li>
-            First launch only: Windows SmartScreen may say "Windows protected your PC" →
-            <b>More info → Run anyway</b> (the app is unsigned).
-          </li>
-          <li>Play PokeMMO in windowed or borderless mode (English client). The overlay appears in battles.</li>
-        </ol>
-      </section>
+    <section id="setup" class="wrap">
+      <div class="sec-head">
+        <span class="eyebrow">Get started</span>
+        <h2>Running in under a minute</h2>
+      </div>
+      <ol class="steps">
+        <li>
+          <b>Download</b> the latest
+          <a href="https://github.com/ghostpixxel/ShakeChecker/releases/latest">release</a> and
+          extract it anywhere.
+        </li>
+        <li>Run <code>ShakeChecker.exe</code>. It lives in your system tray.</li>
+        <li>
+          First launch only: if Windows shows "Windows protected your PC", click
+          <b>More info → Run anyway</b> (the app is unsigned).
+        </li>
+        <li>Play PokeMMO in windowed or borderless mode (English client). The overlay shows in battles.</li>
+      </ol>
+    </section>
 
-      <section id="faq">
-        <h2>FAQ</h2>
-
-        <details>
-          <summary>Is this allowed? Will I get banned?</summary>
+    <section class="wrap">
+      <div class="safe screen">
+        <div class="inner">
+          <h3>Ban-safe by design</h3>
           <p>
-            A PokeMMO staff member confirmed that "OCR and overlays that make no game inputs are
-            fine and not against the rules." ShakeChecker is exactly that: it reads the screen and
-            shows an overlay, and never sends any input to the game.
+            ShakeChecker is built read-only on purpose. It only reads your screen and draws an
+            overlay — it never sends inputs, never reads game memory, and never modifies the client.
+            There is nothing for it to automate; you still play every battle yourself.
           </p>
-        </details>
+          <div class="chips">
+            <span class="chip">100% read-only</span>
+            <span class="chip">Never sends inputs</span>
+            <span class="chip">Never reads memory</span>
+            <span class="chip">Open source</span>
+          </div>
+        </div>
+      </div>
+    </section>
 
+    <section id="faq" class="wrap">
+      <div class="sec-head">
+        <span class="eyebrow">FAQ</span>
+        <h2>Questions</h2>
+      </div>
+
+      <div class="faq-group">
+        <span class="eyebrow">Using it</span>
+        <details>
+          <summary>The overlay doesn't show up.</summary>
+          <div class="ans">
+            Run PokeMMO in windowed or borderless mode (not exclusive fullscreen), use the English
+            client, and start a wild battle — the overlay is hidden in the overworld and in trainer
+            battles.
+          </div>
+        </details>
+        <details>
+          <summary>The turn counter is wrong or not updating.</summary>
+          <div class="ans">
+            Keep the in-game chat visible with the <b>Battle tab active</b>. ShakeChecker reads
+            "Turn N started!" from the battle chat, and corrections kick in from turn 2 onward.
+          </div>
+        </details>
+        <details>
+          <summary>It didn't recognise the Pokémon or its status.</summary>
+          <div class="ans">
+            The name and status are read from the screen, so keep them visible and unobscured by
+            animations. Sleep, paralysis, poison, burn and freeze are all recognised.
+          </div>
+        </details>
+      </div>
+
+      <div class="faq-group">
+        <span class="eyebrow">Location Dex</span>
+        <details>
+          <summary>What is the Location Dex?</summary>
+          <div class="ans">
+            It reads your current location from the HUD and lists the Pokémon that spawn on that
+            route, minus the ones you've already caught — so you instantly see what you still need
+            where you're standing.
+          </div>
+        </details>
+        <details>
+          <summary>How does it know what I've already caught?</summary>
+          <div class="ans">
+            It detects your OT catches in battle (the red Poké Ball icon by the enemy's name) and
+            records them per account. You can also click any entry to mark it caught or uncaught
+            yourself.
+          </div>
+        </details>
+        <details>
+          <summary>Does it account for time of day and season?</summary>
+          <div class="ans">
+            Yes. It factors in the current period and season, and shows each Pokémon's rarity (by
+            colour) and how it's found (grass, water, fishing, lure, and so on).
+          </div>
+        </details>
+      </div>
+
+      <div class="faq-group">
+        <span class="eyebrow">Safety</span>
+        <details>
+          <summary>Is it safe to use? Will I get banned?</summary>
+          <div class="ans">
+            It's built to be ban-safe: strictly read-only, it never sends inputs, never reads game
+            memory and never touches the client. It only reads the screen and draws an overlay.
+          </div>
+        </details>
         <details>
           <summary>Is it a bot? Does it automate anything?</summary>
-          <p>
-            No. It never presses keys or clicks into the game. You play and throw balls yourself —
-            it only displays information. There is no automation of any kind.
-          </p>
+          <div class="ans">
+            No. It never presses keys or clicks into the game. You play and throw balls yourself.
+          </div>
         </details>
-
         <details>
-          <summary>Does it read game memory or modify the client?</summary>
-          <p>
-            No. It captures pixels from the screen (the same thing you see) and draws a separate
-            overlay window. It does not read process memory, inject code, or change any game file.
-          </p>
+          <summary>Why does Windows warn me on first launch?</summary>
+          <div class="ans">
+            The app is unsigned (signing certificates are expensive for a free tool), so SmartScreen
+            warns once. Click More info → Run anyway. The full source is on GitHub if you'd rather
+            build it yourself.
+          </div>
         </details>
-
         <details>
-          <summary>Why does Windows say "Windows protected your PC"?</summary>
-          <p>
-            The app is unsigned (code-signing certificates are expensive for a free tool), so
-            SmartScreen warns on first launch. Click <b>More info → Run anyway</b>. The full source
-            is on GitHub if you'd rather build it yourself.
-          </p>
+          <summary>Does it use the internet or collect data?</summary>
+          <div class="ans">
+            No. It makes no network connections, and your caught lists are stored locally in
+            <code>%APPDATA%\ShakeChecker</code>.
+          </div>
         </details>
+      </div>
 
+      <div class="faq-group">
+        <span class="eyebrow">Good to know</span>
         <details>
-          <summary>Does it connect to the internet or collect data?</summary>
-          <p>
-            No. It makes no network connections. Your per-account caught lists are stored locally in
-            <code>%APPDATA%\ShakeChecker</code> and never leave your machine.
-          </p>
+          <summary>Which catch formula does it use?</summary>
+          <div class="ans">PokeMMO's Gen 3/4 catch formula, with the game's own ball and status multipliers.</div>
         </details>
-
         <details>
-          <summary>My antivirus flagged it.</summary>
-          <p>
-            Apps bundled with PyInstaller sometimes trigger false positives. ShakeChecker is open
-            source — you can read every line and build it yourself from the repo if you prefer.
-          </p>
+          <summary>Multiple accounts?</summary>
+          <div class="ans">Yes — caught lists are kept separately per account.</div>
         </details>
-
         <details>
-          <summary>Does it work at my resolution / window size?</summary>
-          <p>
-            Yes. All detection is based on fractions of the window, not fixed pixels, so it works at
-            any size or aspect ratio — and keeps working if you resize mid-battle.
-          </p>
+          <summary>Is it heavy on my PC?</summary>
+          <div class="ans">No — it runs at about 5 frames per second during battles and 2 while walking.</div>
         </details>
-
         <details>
-          <summary>Mac or Linux?</summary>
-          <p>Windows 10/11 only for now.</p>
+          <summary>What isn't supported yet?</summary>
+          <div class="ans">
+            The Safari Zone (it uses a different catch mechanic), Alpha Pokémon rates, and
+            non-English clients. These are on the roadmap.
+          </div>
         </details>
+      </div>
+    </section>
 
-        <details>
-          <summary>How do I update?</summary>
-          <p>
-            Download the newest
-            <a href="https://github.com/ghostpixxel/ShakeChecker/releases/latest">release</a> and
-            replace the old folder. Your caught lists in <code>%APPDATA%\ShakeChecker</code> are
-            kept.
-          </p>
-        </details>
-      </section>
-
-      <footer>
-        ShakeChecker is a fan-made, read-only tool and is not affiliated with PokeMMO or Nintendo /
-        The Pokemon Company.<br />
+    <footer class="wrap">
+      <div>A fan-made, read-only tool. Not affiliated with PokeMMO or Nintendo / The Pokémon Company.</div>
+      <div class="links">
         <a href="https://github.com/ghostpixxel/ShakeChecker">GitHub</a> ·
         <a href="https://github.com/ghostpixxel/ShakeChecker/releases/latest">Download</a> ·
         <a href="https://github.com/ghostpixxel/ShakeChecker/issues">Report an issue</a>
-      </footer>
-    </div>
+      </div>
+    </footer>
+
+    <script>
+      // Demo videos — drop your clips in docs/media/ and list them here (any number).
+      const VIDEOS = ["media/demo-1.mp4", "media/demo-2.mp4", "media/demo-3.mp4"];
+
+      const track = document.getElementById("track");
+      const dots = document.getElementById("dots");
+      const prev = document.getElementById("prev");
+      const next = document.getElementById("next");
+      let index = 0;
+
+      if (VIDEOS.length === 0) {
+        track.innerHTML =
+          '<div class="slide screen"><div class="empty">Demo clips coming soon.</div></div>';
+      } else {
+        VIDEOS.forEach((src, i) => {
+          const slide = document.createElement("div");
+          slide.className = "slide screen";
+          slide.innerHTML =
+            '<video controls preload="metadata" playsinline poster="img/poster.png">' +
+            '<source src="' +
+            src +
+            '" type="video/mp4">Your browser cannot play this video.</video>';
+          track.appendChild(slide);
+          const dot = document.createElement("button");
+          dot.setAttribute("aria-label", "Go to video " + (i + 1));
+          dot.addEventListener("click", () => go(i));
+          dots.appendChild(dot);
+        });
+      }
+
+      const slides = [...track.children];
+      function go(n) {
+        index = (n + slides.length) % slides.length;
+        track.style.transform = "translateX(" + -index * 100 + "%)";
+        [...track.querySelectorAll("video")].forEach((v) => v.pause());
+        [...dots.children].forEach((d, i) =>
+          d.setAttribute("aria-current", i === index ? "true" : "false")
+        );
+      }
+      if (slides.length > 1) {
+        prev.addEventListener("click", () => go(index - 1));
+        next.addEventListener("click", () => go(index + 1));
+        go(0);
+      } else {
+        prev.style.display = next.style.display = "none";
+        dots.style.display = "none";
+      }
+    </script>
   </body>
 </html>
