@@ -23,6 +23,10 @@ import logging
 import sys
 import time
 
+import win32api
+import win32con
+import win32event
+import winerror
 from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QAction, QIcon
 from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
@@ -847,6 +851,22 @@ def build_dex(account_override: str | None) -> DexSession | None:
     return DexSession(data, caught)
 
 
+SINGLE_INSTANCE_NAME = "ShakeChecker_SingleInstance_Mutex"
+
+
+def acquire_single_instance(name: str = SINGLE_INSTANCE_NAME) -> int | None:
+    """Acquire a process-wide lock so only ONE ShakeChecker runs at a time. Returns
+    the mutex handle (the caller must keep a reference for the whole process
+    lifetime) or None if another instance already holds it. A Windows named mutex is
+    released by the kernel when the owning process exits -- even on a crash -- so
+    there is no stale lock to clean up."""
+    handle = win32event.CreateMutex(None, False, name)
+    if win32api.GetLastError() == winerror.ERROR_ALREADY_EXISTS:
+        win32api.CloseHandle(handle)  # our handle is a 2nd ref to the existing mutex
+        return None
+    return handle
+
+
 def run(
     species_override: dict | None,
     status_override: str | None,
@@ -855,6 +875,18 @@ def run(
     debug: bool = False,
 ) -> None:
     setup_logging(debug)
+    # Only one instance may run: a second would draw a duplicate overlay over the
+    # first (looks like ghosting). Hold the lock for the whole process via `lock`.
+    lock = acquire_single_instance()
+    if lock is None:
+        log.info("ShakeChecker is already running; this instance will exit")
+        win32api.MessageBox(
+            0,
+            "ShakeChecker is already running.",
+            "ShakeChecker",
+            win32con.MB_OK | win32con.MB_ICONINFORMATION,
+        )
+        return
     app = QApplication(sys.argv[:1])
     # The overlay and dex panels hide themselves between battles, so don't quit when
     # no window is visible -- the app lives in the tray and is quit from there.
