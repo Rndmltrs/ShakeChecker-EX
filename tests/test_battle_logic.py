@@ -2,7 +2,7 @@
 lock the exact turn-correction and battle-end-grace behaviour that previously
 lived inline in app.py and could only be checked by playing the game."""
 
-from battle_logic import apply_chat_turn, battle_end_grace, is_in_battle
+from battle_logic import apply_chat_turn, battle_end_grace, dex_panel_action, is_in_battle
 from battle_reader import BattleState, BattleText
 from turn_tracker import TurnTracker
 
@@ -10,6 +10,25 @@ MENU = BattleText(menu_present=True, caught=False, action=False)
 EMPTY = BattleText(menu_present=False, caught=False, action=False)
 ACTION = BattleText(menu_present=False, caught=False, action=True)
 CAUGHT = BattleText(menu_present=False, caught=True, action=False)
+
+
+# --- dex_panel_action -----------------------------------------------------
+
+
+def test_matched_read_shows_and_resets_streak():
+    assert dex_panel_action(True, 0, hide_after=3) == ("show", 0)
+    assert dex_panel_action(True, 2, hide_after=3) == ("show", 0)  # any prior misses cleared
+
+
+def test_single_miss_keeps_panel():
+    # one garbled OCR / transition frame must NOT hide the panel
+    assert dex_panel_action(False, 0, hide_after=3) == ("keep", 1)
+    assert dex_panel_action(False, 1, hide_after=3) == ("keep", 2)
+
+
+def test_hides_only_after_enough_consecutive_misses():
+    assert dex_panel_action(False, 2, hide_after=3) == ("hide", 3)
+    assert dex_panel_action(False, 5, hide_after=3) == ("hide", 6)
 
 
 # --- is_in_battle ---------------------------------------------------------

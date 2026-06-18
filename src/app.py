@@ -30,7 +30,7 @@ from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 import paths
 from account_store import AccountConfig, CaughtStore, delete_account_data
 from battle_log import AsyncChatReader, read_turn_number
-from battle_logic import apply_chat_turn, battle_end_grace, is_in_battle
+from battle_logic import apply_chat_turn, battle_end_grace, dex_panel_action, is_in_battle
 from battle_reader import (
     BattleState,
     BattleTextReader,
@@ -102,6 +102,11 @@ TURN_DOWN_GUARD_S = 3.0
 # Location OCR for the dex panel is comparatively expensive and the location
 # changes slowly, so refresh it at most this often while walking around (IDLE).
 DEX_LOC_INTERVAL_S = 2.5
+# Don't hide the dex panel on a single failed location read: a garbled OCR or a
+# screen transition briefly makes the HUD unreadable. Keep the last good location
+# up until this many consecutive misses (~DEX_LOC_INTERVAL_S apart) confirm we've
+# genuinely left to an area not in the index.
+DEX_LOC_MISS_HIDE = 3
 DEX_SHOWN_MAX = 5  # entries shown before collapsing the rest into "+X"
 
 log = logging.getLogger("shakechecker")
@@ -376,6 +381,7 @@ class LiveLoop:
         self._ot_checked = False  # enemy's OT-caught icon checked this battle
         self._was_horde = False  # read_battle horde hint (read every tick, so init here)
         self._last_loc_check = 0.0  # last IDLE location OCR (throttle)
+        self._loc_miss_streak = 0  # consecutive unmatched location reads (debounce hide)
         self._dex_log = ""  # last printed dex panel text (console dedup)
         self._last_hud = ""  # last HUD location seen (to refresh the panel on a toggle)
         if self.dex_panel is not None and self.dex is not None:
@@ -495,13 +501,17 @@ class LiveLoop:
         if self.state is AppState.IDLE and self.dex is not None and dex_due:
             self._last_loc_check = now
             view = self._update_dex(read_location(frame, self.cal.location))
+            action, self._loc_miss_streak = dex_panel_action(
+                view is not None, self._loc_miss_streak, hide_after=DEX_LOC_MISS_HIDE
+            )
             if self.dex_panel is not None:
-                if view is not None:
+                if view is not None:  # matched -> show (action == "show")
                     self.dex_panel.apply_scale(scale_for_window(client_rect.height))
                     self.dex_panel.show_here(view)
                     self.dex_panel.dock_to(client_rect.left, client_rect.top, client_rect.width)
-                else:  # location not matched -> nothing useful to show
+                elif action == "hide":  # several misses in a row -> truly left the area
                     self.dex_panel.hide_panel()
+                # "keep": a transient miss -> leave the last good panel on screen
 
         return self._frame_interval()
 
@@ -751,8 +761,9 @@ class LiveLoop:
         Returns the view (or None) so the caller can drive the overlay panel."""
         if self.dex is None or not hud_name:
             return None
-        self._last_hud = hud_name
         view = self.dex.on_location(hud_name)
+        if view is not None:
+            self._last_hud = hud_name  # remember only locations we could resolve
         panel = dex_panel_text(view)
         if panel and panel != self._dex_log:
             log.info(panel)
