@@ -60,6 +60,22 @@ python src\app.py --list-windows        # diagnose window detection, then exit
 Catch-list data is stored per account under `userdata/` (which character is
 active is remembered between runs).
 
+## Windows SmartScreen & antivirus
+
+ShakeChecker is **unsigned** (code-signing certificates are an annual cost that
+is hard to justify for a free fan tool), so on first launch Windows SmartScreen
+shows *"Windows protected your PC"* → click **More info → Run anyway**. A couple
+of antivirus engines may also flag it: that is a known **heuristic false
+positive** for PyInstaller-bundled Python apps, not actual malware.
+
+If you would rather verify than trust:
+
+- The full source is in this repo. It only captures the screen and draws an
+  overlay, it never sends inputs, reads game memory, or touches the network.
+- **VirusTotal scan of the latest release:** <!-- paste the VirusTotal result URL here -->
+  *(scan link coming soon)*
+- Or build the `.exe` yourself (see [Building a release](#building-a-release-exe)).
+
 ## Architecture
 
 A `WAITING → IDLE → BATTLE` state machine drives everything, one step per

@@ -51,3 +51,6 @@ jobs:
                → More info → Run anyway (the app is unsigned).
 
             Windows 10/11. PokeMMO in windowed/borderless mode, English client.
+
+            Not sure it's safe? It's fully open source, see the "Windows SmartScreen
+            & antivirus" section in the README for why an AV may warn and a VirusTotal scan.
