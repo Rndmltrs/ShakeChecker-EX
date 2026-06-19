@@ -790,6 +790,15 @@
         <li>Play PokeMMO in windowed or borderless mode (English client). The overlay shows in battles.</li>
       </ol>
       <div class="note">
+        <span class="tag">⚠ Use the default client theme</span>
+        <p>
+          ShakeChecker reads the <b>default client UI</b> to detect battles and HP. Custom themes
+          (for example Simple Dark) redraw the health bars and menus, so detection becomes
+          unreliable. Stick to the <b>default theme</b> for now (Superstrings is fine, it doesn't
+          change the battle UI).
+        </p>
+      </div>
+      <div class="note">
         <span class="tag">⚠ Turns not counting right?</span>
         <p>
           Turns are counted from your actions, and cross-checked against the battle chat for
@@ -848,6 +857,15 @@
           <div class="ans">
             The name and status are read from the screen, so keep them visible and unobscured by
             animations. Sleep, paralysis, poison, burn and freeze are all recognised.
+          </div>
+        </details>
+        <details>
+          <summary>Does it work with custom client themes?</summary>
+          <div class="ans">
+            ShakeChecker is built for the <b>default client theme</b>. Custom themes (for example
+            Simple Dark) redraw the health bars and battle menu, so battle detection becomes
+            unreliable. Use the default theme for now; Superstrings works fine since it doesn't
+            change the battle UI. Per-theme support is tracked but not yet available.
           </div>
         </details>
       </div>
