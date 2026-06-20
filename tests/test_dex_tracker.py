@@ -160,6 +160,21 @@ def test_display_order_lists_all_uncaught_then_caught_rares():
     assert order[0].caught is False and order[-1].caught is True
 
 
+def test_display_order_keep_caught_lists_all_caught_by_id():
+    # issue #16: keep_caught keeps every caught species, checked, at the bottom,
+    # sorted by dex id (no rarity filtering, nothing removed).
+    entries = [
+        de(2),  # uncaught
+        de(1),  # uncaught
+        de(10, "Common", caught=True),  # common caught -> still shown now
+        de(12, "Very Rare", caught=True),
+        de(11, "Rare", caught=True),
+    ]
+    order = display_order(entries, keep_caught=True)
+    assert [e.id for e in order] == [1, 2, 10, 11, 12]  # uncaught by id, then caught by id
+    assert [e.caught for e in order] == [False, False, True, True, True]
+
+
 # --- EncounterData against the real vendored file ---
 
 

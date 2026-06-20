@@ -172,6 +172,9 @@ class DexPanel(QWidget):
         self.on_toggle_ball: Callable[[str], None] | None = None
         self.on_set_all_balls: Callable[[bool], None] | None = None
         self.get_ball_state: Callable[[], tuple[list[tuple[str, str]], set[str]]] | None = None
+        # dex mode: read/flip whether caught species stay in the list (issue #16)
+        self.get_keep_caught: Callable[[], bool] | None = None
+        self.on_toggle_keep_caught: Callable[[], None] | None = None
 
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -295,7 +298,8 @@ class DexPanel(QWidget):
 
     def show_here(self, view: LocationView) -> None:
         """Populate from a location view and show the panel."""
-        entries = display_order(view.entries)
+        keep_caught = self.get_keep_caught() if self.get_keep_caught is not None else True
+        entries = display_order(view.entries, keep_caught=keep_caught)
         needed = sum(1 for e in view.entries if not e.caught)
         self._title.setText(view.route.title())
         self._subtitle.setText(
@@ -430,7 +434,28 @@ class DexPanel(QWidget):
         new.setStyleSheet("QPushButton { text-align: left; color: #9aa0aa; }")
         new.clicked.connect(self._create_profile)
         box.addWidget(new)
+
+        # Dex-mode section: keep caught species in the list (checked, at bottom)
+        # or hide them. See issue #16.
+        dex_head = QLabel("Dex")
+        dex_head.setFont(self._font(12, bold=True))
+        dex_head.setStyleSheet("color: #ffffff;")
+        box.addWidget(dex_head)
+        keep = self.get_keep_caught() if self.get_keep_caught is not None else True
+        toggle = QPushButton(("✓  " if keep else "    ") + "Show caught")
+        toggle.setFont(self._font(12))
+        toggle.setCursor(Qt.CursorShape.PointingHandCursor)
+        toggle.setToolTip("Keep caught species in the list, checked, at the bottom")
+        shade = "#eeeeee" if keep else "#777777"
+        toggle.setStyleSheet(f"QPushButton {{ text-align: left; color: {shade}; }}")
+        toggle.clicked.connect(self._toggle_keep_caught)
+        box.addWidget(toggle)
         return w
+
+    def _toggle_keep_caught(self) -> None:
+        if self.on_toggle_keep_caught is not None:
+            self.on_toggle_keep_caught()
+        self._open_profiles()  # rebuild so the check state updates, popup stays open
 
     def _choose_profile(self, name: str) -> None:
         if self.on_select_profile is not None:

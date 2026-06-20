@@ -31,3 +31,16 @@ def test_corrupt_file_falls_back(tmp_path):
     (tmp_path / "settings.json").write_text("{ not json", encoding="utf-8")
     s = Settings.load(tmp_path)
     assert s.hidden_balls == set()  # no crash, all visible
+    assert s.keep_caught is True  # default dex mode
+
+
+def test_keep_caught_defaults_on(tmp_path):
+    assert Settings.load(tmp_path).keep_caught is True
+
+
+def test_toggle_keep_caught_persists(tmp_path):
+    s = Settings.load(tmp_path)
+    assert s.toggle_keep_caught() is False
+    assert Settings.load(tmp_path).keep_caught is False  # persisted
+    assert s.toggle_keep_caught() is True
+    assert Settings.load(tmp_path).keep_caught is True

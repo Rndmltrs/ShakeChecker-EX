@@ -139,15 +139,26 @@ def location_entries(
     return entries
 
 
-def display_order(entries: list[DexEntry]) -> list[DexEntry]:
-    """The full ordered list for the (scrollable) panel: every uncaught species by
-    dex id, then the already-caught Lure/Rare/Very Rare ones (rarest first)."""
+def display_order(entries: list[DexEntry], keep_caught: bool = False) -> list[DexEntry]:
+    """The full ordered list for the (scrollable) panel.
+
+    Uncaught species always come first, sorted by dex id. The caught tail depends
+    on the mode (issue #16):
+
+    - keep_caught=True: every caught species, by dex id (shown checked at the
+      bottom -- nothing is removed from the list).
+    - keep_caught=False: only the already-caught Lure/Rare/Very Rare ones, rarest
+      first (the old behaviour -- common caught species are hidden).
+    """
     uncaught = sorted((e for e in entries if not e.caught), key=lambda e: e.id)
-    rares = sorted(
-        (e for e in entries if e.caught and e.rarity in PAD_RARITIES),
-        key=lambda e: (-_RARITY_RANK[e.rarity], e.id),
-    )
-    return uncaught + rares
+    if keep_caught:
+        caught = sorted((e for e in entries if e.caught), key=lambda e: e.id)
+    else:
+        caught = sorted(
+            (e for e in entries if e.caught and e.rarity in PAD_RARITIES),
+            key=lambda e: (-_RARITY_RANK[e.rarity], e.id),
+        )
+    return uncaught + caught
 
 
 def select_display(entries: list[DexEntry], limit: int) -> tuple[list[DexEntry], int]:

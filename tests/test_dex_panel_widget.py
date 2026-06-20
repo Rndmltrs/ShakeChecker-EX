@@ -73,12 +73,34 @@ def test_caught_padding_marked_with_check(qt_app):
     assert "✓" in p._rows[1]["way"].text()
 
 
-def test_all_caught_message(qt_app):
+def test_all_caught_message_in_hide_mode(qt_app):
     entries = [DexEntry(1, "A", (), "Common", True)]  # caught, too common to pad
     p = DexPanel()
+    p.get_keep_caught = lambda: False  # hide-mode: caught commons removed -> empty
     p.show_here(view(entries))
     assert "0 left" in p._subtitle.text()
     assert "all caught here" in p._rows[0]["name"].text()
+
+
+def test_keep_caught_keeps_caught_common_checked(qt_app):
+    # issue #16 default: a caught common species stays in the list, checked.
+    entries = [DexEntry(1, "A", (), "Common", True)]
+    p = DexPanel()
+    p.get_keep_caught = lambda: True
+    p.show_here(view(entries))
+    assert "0 left" in p._subtitle.text()
+    assert "A" in p._rows[0]["name"].text()
+    assert "✓" in p._rows[0]["way"].text()
+    assert "all caught here" not in p._rows[0]["name"].text()
+
+
+def test_keep_caught_toggle_uses_callback(qt_app):
+    calls: list[bool] = []
+    p = DexPanel()
+    p.on_toggle_keep_caught = lambda: calls.append(True)
+    p.get_keep_caught = lambda: True
+    p._toggle_keep_caught()
+    assert calls == [True]
 
 
 def test_row_click_invokes_toggle_with_dex_id(qt_app):

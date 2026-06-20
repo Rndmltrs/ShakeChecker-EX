@@ -397,6 +397,8 @@ class LiveLoop:
             self.dex_panel.on_toggle_ball = self._toggle_ball
             self.dex_panel.on_set_all_balls = self._set_all_balls
             self.dex_panel.get_ball_state = self._ball_state
+            self.dex_panel.get_keep_caught = lambda: self.settings.keep_caught
+            self.dex_panel.on_toggle_keep_caught = self._toggle_keep_caught
 
     def start(self) -> None:
         log.info(f"ShakeChecker v{paths.APP_VERSION}")
@@ -831,6 +833,11 @@ class LiveLoop:
     def _set_all_balls(self, visible: bool) -> None:
         self.settings.set_all_balls([b["id"] for b in self.balls], visible)
         self.overlay.set_hidden_names(self._hidden_ball_names())
+
+    def _toggle_keep_caught(self) -> None:
+        now = self.settings.toggle_keep_caught()
+        log.info(f"dex: keep-caught {'on' if now else 'off'}")
+        self._refresh_dex_panel()
 
 
 def build_dex(account_override: str | None) -> DexSession | None:
