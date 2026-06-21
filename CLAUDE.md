@@ -29,7 +29,7 @@ src/
   catch_calc.py       # pure functions: catch probability per ball
   overlay.py          # PyQt6 click-through overlay, docks to game window
   data/
-    catch_rates.json  # species -> base catch rate (Gen 5 data)
+    species_core.json # id, name, types, catch_rate, obtainable (single source of truth)
     balls.json        # ball -> bonus rules
   app.py              # state machine + main loop
 fixtures/             # PNG screenshots for tests (see Testing)
@@ -80,8 +80,7 @@ Reference check: Bulbasaur (rate 45), 100% HP, Sleep, Poke Ball -> x = 30, P = 1
 
 ## Data sources
 
-- **Base catch rates:** `src/data/catchRates.json` from <https://github.com/PokeMMO-Tools/pokemmo-hub> (611 entries, `{id, rate}`; dex id = National Dex order). Vendor a copy into `src/data/`.
-- **Species names/ids:** `monster.json` from the same repo (originates from the official PokeMMO client dump) or <https://github.com/PokeMMOZone/PokeMMO-Data> (`pokemon-data.json`).
+- **Species + base catch rates (single source of truth):** `src/data/species_core.json` (`{id, name, types, catch_rate, obtainable}`; dex id = National Dex order). This is the only file the runtime reads for catch rates. Catch rates originate from the PokeMMO Hub (<https://github.com/PokeMMO-Tools/pokemmo-hub>), names/types from the official PokeMMO client dump / <https://github.com/PokeMMOZone/PokeMMO-Data>. `catch_rate` is `null` for species with no published rate (e.g. roaming Latias/Latios/Mesprit/Cresselia) — the overlay shows `??` for those. **Hand corrections live here, not upstream:** the roaming birds/beasts (Articuno…Suicune) are `3` per the in-client PokeMMO catch calculator, not the Hub's `5`; do not "re-sync" them from the Hub.
 - **Encounter/location data (milestone 4):** `location-data.json` / `location-types.json` from <https://github.com/PokeMMOZone/PokeMMO-Data> — PokeMMO-specific spawns; do NOT use vanilla PokeAPI encounter tables.
 - **Update path:** PokeMMO client -> Settings -> Utilities -> Dump Moddable Resources -> Pokedex Data. Write a small `scripts/update_data.py` that refreshes the vendored JSONs from the repos.
 
