@@ -444,6 +444,10 @@ class DexPanel(QWidget):
 
         # Dex-mode section: keep caught species in the list (checked, at bottom)
         # or hide them. See issue #16.
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet("color: rgba(255,255,255,40);")
+        box.addWidget(sep)
         dex_head = QLabel("Dex")
         dex_head.setFont(self._font(12, bold=True))
         dex_head.setStyleSheet("color: #ffffff;")
