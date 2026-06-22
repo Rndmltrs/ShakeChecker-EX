@@ -626,10 +626,9 @@ class DexPanel(QWidget):
 
     def _popup_window(self, obj_name: str) -> tuple[QWidget, QVBoxLayout]:
         """A frameless dark popup matching the panel; returns (window, content box)."""
-        w = QWidget(None)
+        w = QWidget(self)
         w.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.WindowStaysOnTopHint
             | Qt.WindowType.Tool
         )
         w.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
