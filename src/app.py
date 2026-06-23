@@ -411,10 +411,10 @@ class LiveLoop:
         self.battle_panel.on_set_all_balls = self.settings.set_all_balls
         self.battle_panel.get_ball_state = self._ball_state
         
-        self._last_loc: LocationView | None = None
+        self._last_hud = ""  # last resolved HUD location (drives dex panel refresh)
         self._loc_read = False  # location OCR'd this battle yet
-        self._loc_ocr_raw: dict | None = None  # the literal OCR result, cached
-        self._last_loc_mask: np.ndarray | None = None  # the location banner's mask image
+        self._loc_ocr_raw = ""  # last raw OCR text (tracks what the screen actually shows)
+        self._last_loc_mask: np.ndarray | None = None  # fast visual delta for location OCR
         self._loc_miss_streak = 0  # frames without location text
         self._loc_future = None  # background Location OCR task
         self._name_future = None  # background Name OCR task
@@ -425,9 +425,6 @@ class LiveLoop:
         self._was_horde = False  # read_battle horde hint (read every tick, so init here)
         self._last_loc_check = 0.0  # last IDLE location OCR (throttle)
         self._dex_log = ""  # last printed dex panel text (console dedup)
-        self._last_hud = ""  # last resolved HUD location (drives dex panel refresh)
-        self._loc_ocr_raw = ""  # last raw OCR text (tracks what the screen actually shows)
-        self._last_loc_mask: np.ndarray | None = None  # fast visual delta for location OCR
         if self.dex_panel is not None and self.dex is not None:
             self.dex_panel.on_toggle_caught = self._dex_toggle_caught
             self.dex_panel.on_select_profile = self._dex_use_profile
@@ -662,7 +659,7 @@ class LiveLoop:
             if mask is not None:
                 if self._last_loc_mask is None or not np.array_equal(mask, self._last_loc_mask):
                     if dex_due and loc_future is None:
-                        if self._last_loc is None and self.dex_panel is not None:
+                        if not self._last_hud and self.dex_panel is not None:
                             # Show a placeholder UI while the very first location OCR finishes in the background
                             from game_time import Period
                             from dex_session import LocationView

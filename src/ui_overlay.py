@@ -5,8 +5,9 @@ from __future__ import annotations
 import win32api
 import win32con
 import win32gui
-from PyQt6.QtGui import QGuiApplication
-from PyQt6.QtWidgets import QWidget
+from PyQt6.QtGui import QGuiApplication, QFont, QCursor
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFrame, QPushButton, QLabel
+from PyQt6.QtCore import Qt, QTimer
 
 # Base (scale 1.0) sizes in logical px. apply_scale() multiplies these; 1.0 is the
 # cap, so the overlay is never larger than this.
@@ -83,3 +84,103 @@ def bring_overlay_above_game(widget: QWidget) -> None:
         win32gui.SetWindowPos(hwnd, insert_after, 0, 0, 0, 0, flags)
     except Exception:
         pass
+
+class BaseOverlay(QWidget):
+    """Shared parent class for DexPanel and BattlePanel overlays.
+    Handles the transparent click-through window frame, generic top-bar layout, 
+    CSS initialization, scaling helpers, and Win32 docking logic."""
+    
+    def __init__(self, mode_name: str, mode_tooltip: str, base_panel_w: int, extra_css: str = "") -> None:
+        super().__init__()
+        self._scale = 0.0
+        self._panel_w = base_panel_w
+        self._last_pos: tuple[int, int] | None = None
+        self._click_through: bool | None = None
+        
+        self.on_mode_toggle = None
+
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.Tool
+            | Qt.WindowType.WindowDoesNotAcceptFocus
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+
+        self._mono = QFont("Consolas")
+        self._mono.setStyleHint(QFont.StyleHint.Monospace)
+        
+        from ui_theme import get_global_stylesheet
+        self.setStyleSheet(get_global_stylesheet() + extra_css)
+        
+        self._root = QVBoxLayout(self)
+        self._root.setContentsMargins(0, 0, 0, 0)
+        panel = QFrame(objectName="panel")
+        self._root.addWidget(panel)
+        self._col = QVBoxLayout(panel)
+
+        self._bar = QHBoxLayout()
+        self._mode_btn = QPushButton()
+        self._mode_btn.setToolTip(mode_tooltip)
+        self._mode_btn.clicked.connect(lambda: self.on_mode_toggle() if self.on_mode_toggle else None)
+        self._bar.addWidget(self._mode_btn)
+        
+        self._mode_label = QLabel(mode_name)
+        self._mode_label.setObjectName("PrimaryText")
+        self._bar.addWidget(self._mode_label)
+        self._bar.addStretch(1)
+        
+        self._settings_btn = QPushButton()
+        self._settings_btn.setToolTip("Profiles: create / load / delete")
+        
+        self.setup_middle_btn()
+        self._bar.addWidget(self._settings_btn)
+        
+        for b in (self._mode_btn, self._settings_btn):
+            b.setCursor(Qt.CursorShape.PointingHandCursor)
+            
+        self._col.addLayout(self._bar)
+
+        self._hover = QTimer(self)
+        self._hover.setInterval(40)
+        self._hover.timeout.connect(self._check_hover)
+
+    def setup_middle_btn(self) -> None:
+        """Override in subclasses to insert a button before the profile button (e.g. Info or Balls)"""
+        pass
+
+    def _px(self, base: float) -> int:
+        return max(1, round(base * self._scale))
+
+    def _font(self, size_px: int, bold: bool = False) -> QFont:
+        f = QFont(self._mono)
+        f.setPixelSize(size_px)
+        f.setBold(bold)
+        return f
+
+    def dock_to(self, left: int, top: int, client_w: int) -> None:
+        """Move the overlay to its docked position."""
+        if self._last_pos == (left, top, client_w):
+            return
+        self._last_pos = (left, top, client_w)
+        x = left + client_w - self.width() - DOCK_MARGIN if DOCK_SIDE == "right" else left + DOCK_MARGIN
+        lx, ly = phys_to_logical(x, top + DOCK_TOP_OFFSET)
+        self.move(lx, ly)
+
+    def _check_hover(self) -> None:
+        if not self.isVisible():
+            return
+        over = self.frameGeometry().adjusted(-30, -30, 30, 30).contains(QCursor.pos())
+        self._apply_click_through(not over)
+
+    def _apply_click_through(self, on: bool) -> None:
+        if on == self._click_through:
+            return
+        self._click_through = on
+        hwnd = int(self.winId())
+        style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
+        if on:
+            style |= win32con.WS_EX_TRANSPARENT
+        else:
+            style &= ~win32con.WS_EX_TRANSPARENT
+        win32gui.SetWindowLong(hwnd, win32con.GWL_EXSTYLE, style)

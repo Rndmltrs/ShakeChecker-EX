@@ -35,8 +35,8 @@ from ui_overlay import (
 BASE_PANEL_W = 236  # fits the widest obtainable name + " Lv.100" at 16px bold
 BASE_SPRITE_H = 24
 BASE_BALL_H = 20
-BASE_NAME_PX = 16
-BASE_SUB_PX = 13
+BASE_NAME_PX = 15
+BASE_SUB_PX = 11
 BASE_ROW_PX = 13
 BASE_STATUS_PX = 10
 BASE_LEVEL_PX = 11
@@ -50,15 +50,6 @@ BASE_PCT_MINW = 48
 
 # probability colour thresholds (fraction 0-1) -> hex
 _RED, _YELLOW, _GREEN = "#ff5555", "#ffcc44", "#55dd66"
-
-
-def prob_color_hex(prob: float) -> str:
-    """Colour hint for a catch probability (0-1): <35% red, 35-66% yellow, >=66% green."""
-    if prob < 0.35:
-        return _RED
-    if prob < 0.66:
-        return _YELLOW
-    return _GREEN
 
 
 def subheader_text(catch_rate: int | None, turn: int) -> str:
@@ -107,22 +98,23 @@ def sprite_bg_style(alpha: bool) -> str:
     return "background: rgba(200,40,40,170); border-radius: 6px;" if alpha else ""
 
 
-class BattlePanel(QWidget):
+from ui_overlay import BaseOverlay
+from ui_components import BattleBallRow
+
+class BattlePanel(BaseOverlay):
     def __init__(self, ball_names: list[str], loader: SpriteLoader | None = None) -> None:
-        super().__init__()
+        super().__init__(
+            mode_name="Battle Mode",
+            mode_tooltip="Switch to Dex Mode",
+            base_panel_w=BASE_PANEL_W
+        )
         self._loader = loader or SpriteLoader()
         self._movie: QMovie | None = None
         self._current_dex: int | None = None  # avoid restarting the GIF every frame
-        self._last_pos: tuple[int, int] | None = None  # avoid redundant moves
         self._ball_names = list(ball_names)
-        self._ball_icons: dict[str, QLabel] = {}
-        self._ball_name_labels: dict[str, QLabel] = {}
-        self._pct_labels: dict[str, QLabel] = {}
-        self._ball_rows: dict[str, QWidget] = {}  # one reorderable row widget per ball
-        self._row_layouts: list[QHBoxLayout] = []
+        self._ball_rows: dict[str, BattleBallRow] = {}  # one reorderable row widget per ball
         self._hidden_names: set[str] = set()  # balls the user chose to hide
         self._last_order: list[str] | None = None  # skip reordering when unchanged
-        self.on_mode_toggle: Callable[[], None] | None = None
         self.on_settings_click: Callable[[QPoint], None] | None = None
         
         self.get_ball_state: Callable[[], tuple[list[tuple[str, str]], set[str]]] | None = None
@@ -130,66 +122,24 @@ class BattlePanel(QWidget):
         self.on_set_all_balls: Callable[[bool], None] | None = None
         self._balls: QWidget | None = None
         
-        self._scale = 0.0  # forces the first apply_scale to size everything
-        self._panel_w = BASE_PANEL_W
         self._sprite_h = BASE_SPRITE_H
         self._level_px = BASE_LEVEL_PX
-        self._click_through = True
-        self._hover = QTimer(self)
-        self._hover.timeout.connect(self._check_hover)
-        self._hover.start(40)
+        self._init_header()
+        self._settings_btn.clicked.connect(self._on_settings_click)
 
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.Tool
-            | Qt.WindowType.WindowDoesNotAcceptFocus
-        )
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
-
-        self._mono = QFont("Consolas")
-        self._mono.setStyleHint(QFont.StyleHint.Monospace)
-
-        self._root = QVBoxLayout(self)
-        root = self._root
-        root.setContentsMargins(0, 0, 0, 0)
-        panel = QFrame(objectName="panel")  # type: ignore[call-arg]  # PyQt6 accepts QObject kwargs
-        panel.setStyleSheet(
-            "#panel { background: rgba(18,18,20,180); border-radius: 10px; }"
-            " QLabel { color: #eeeeee; background: transparent; }"
-            " QPushButton { color: #cfd2d6; background: transparent; border: none; }"
-            " QPushButton:hover { color: #ffffff; }"
-        )
-        root.addWidget(panel)
-        self._col = QVBoxLayout(panel)
-
-        # top icon bar: mode (book) + stretch + gear
-        self._bar = QHBoxLayout()
-        self._mode_btn = QPushButton()
-        self._mode_btn.setToolTip("Switch to Dex Mode")
-        self._mode_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._mode_btn.clicked.connect(lambda: self.on_mode_toggle() if self.on_mode_toggle else None)
-        self._bar.addWidget(self._mode_btn)
-        self._mode_label = QLabel("Battle Mode")
-        self._mode_label.setStyleSheet("color: #cfd2d6;")
-        self._bar.addWidget(self._mode_label)
-        self._bar.addStretch(1)
-        
+    def setup_middle_btn(self) -> None:
+        from PyQt6.QtWidgets import QPushButton
+        from PyQt6.QtCore import Qt
         self._balls_btn = QPushButton()
-        self._balls_btn.setToolTip("Choose which balls to show")
-        self._balls_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._balls_btn.setToolTip("Select Pokeballs to show")
         self._balls_btn.clicked.connect(self._on_balls_click)
+        self._balls_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._bar.addWidget(self._balls_btn)
-        
-        self._profile_btn = QPushButton()
-        self._profile_btn.setToolTip("Settings / Profiles")
-        self._profile_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._profile_btn.clicked.connect(self._on_settings_click)
-        self._bar.addWidget(self._profile_btn)
-        
-        self._col.addLayout(self._bar)
 
-        # header: sprite + name (+ status badge)
+    def _init_header(self) -> None:
+        from PyQt6.QtWidgets import QHBoxLayout, QLabel
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtWidgets import QSizePolicy
         self._header = QHBoxLayout()
         self._sprite = QLabel()
         self._sprite.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
@@ -197,26 +147,29 @@ class BattlePanel(QWidget):
         self._name.setTextFormat(Qt.TextFormat.RichText)  # bold name + small "Lv.N"
         # Ignored width: a long name clips instead of widening the panel.
         self._name.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self._name.setObjectName("PrimaryText")
         self._status = QLabel()
         self._status.setVisible(False)
         self._header.addWidget(self._sprite)
         self._header.addWidget(self._name, 1)
         self._header.addWidget(self._status)
+        self._header.setContentsMargins(0, 0, 0, 0)
         self._col.addLayout(self._header)
 
-        self._sub = QLabel(subheader_text(0, 1))
-        self._sub.setStyleSheet("color: #aaaaaa;")
+        self._sub = QLabel("")
+        self._sub.setTextFormat(Qt.TextFormat.RichText)
+        self._sub.setObjectName("SecondaryTextDark")
         self._sub.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self._col.addWidget(self._sub)
 
         self._hp = QLabel("")
-        self._hp.setStyleSheet("color: #cfd2d6;")
+        self._hp.setObjectName("PrimaryText")
         self._hp.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self._col.addWidget(self._hp)
 
         line = QFrame()
         line.setFrameShape(QFrame.Shape.HLine)
-        line.setStyleSheet("color: rgba(255,255,255,40);")
+        line.setObjectName("Divider")
         self._col.addWidget(line)
 
         self._balls_container = QWidget()
@@ -224,14 +177,15 @@ class BattlePanel(QWidget):
         self._balls_layout.setContentsMargins(0, 0, 0, 0)
         self._col.addWidget(self._balls_container)
 
-        # "no battles detected" placeholder — built as a plain ball-style row so
+        # "no battles detected" placeholder - built as a plain ball-style row so
         # it gets identical height and spacing to the real ball rows.
         self._empty_row = QWidget()
         _row_e = QHBoxLayout(self._empty_row)
         _row_e.setContentsMargins(0, 0, 0, 0)
         self._empty_label = QLabel()
         self._empty_label.setTextFormat(Qt.TextFormat.RichText)
-        self._empty_label.setText('<span style="color:#9aa0aa;">no battles detected</span>')
+        self._empty_label.setText('no battles detected')
+        self._empty_label.setObjectName("SecondaryText")
         self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
         _row_e.addWidget(self._empty_label)
         self._balls_layout.addWidget(self._empty_row)  # always first child
@@ -239,24 +193,9 @@ class BattlePanel(QWidget):
         # one row per ball: icon + name (left) + percent (right). Each row is its own
         # widget so show_battle() can reorder (best % on top) and hide filtered balls.
         for name in self._ball_names:
-            roww = QWidget()
-            row = QHBoxLayout(roww)
-            row.setContentsMargins(0, 0, 0, 0)
-            icon = QLabel()
-            label = QLabel(name)
-            label.setStyleSheet("color: #cfd2d6;")
-            pct = QLabel("—")
-            pct.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            row.addWidget(icon)
-            row.addWidget(label)
-            row.addStretch(1)
-            row.addWidget(pct)
-            self._balls_layout.addWidget(roww)
-            self._ball_rows[name] = roww
-            self._row_layouts.append(row)
-            self._ball_icons[name] = icon
-            self._ball_name_labels[name] = label
-            self._pct_labels[name] = pct
+            row = BattleBallRow(name)
+            self._balls_layout.addWidget(row)
+            self._ball_rows[name] = row
 
         self._balls_layout.addStretch(1)
 
@@ -271,9 +210,7 @@ class BattlePanel(QWidget):
             return
         self._scale = scale
 
-        def px(base: float) -> int:
-            return max(1, round(base * scale))
-
+        px = self._px
         self._panel_w = px(BASE_PANEL_W)
         self.setFixedWidth(self._panel_w)
         self._sprite_h = px(BASE_SPRITE_H)
@@ -283,24 +220,24 @@ class BattlePanel(QWidget):
         row_font = self._font(px(BASE_ROW_PX))
         sub_font = self._font(px(BASE_SUB_PX))
         status_font = self._font(px(BASE_STATUS_PX), bold=True)
+        
         self._name.setFont(name_font)
         self._sub.setFont(sub_font)
         self._hp.setFont(sub_font)
         self._status.setFont(status_font)
         self._empty_label.setFont(row_font)
+        
         self._mode_label.setFont(self._font(px(13), bold=True))
 
         self._sprite.setFixedHeight(self._sprite_h)
         ball_h = px(BASE_BALL_H)
+        pct_minw = px(BASE_PCT_MINW)
+        row_spacing = px(BASE_ROW_SPACING)
+        
         self._empty_row.setFixedHeight(ball_h)
-        for ball, icon in self._ball_icons.items():
-            icon.setPixmap(self._loader.ball_pixmap(ball, ball_h))
-            icon.setFixedHeight(ball_h)
-        for label in self._ball_name_labels.values():
-            label.setFont(row_font)
-        for pct in self._pct_labels.values():
-            pct.setFont(row_font)
-            pct.setMinimumWidth(px(BASE_PCT_MINW))
+        for name, row in self._ball_rows.items():
+            pixmap = self._loader.ball_pixmap(name, ball_h)
+            row.apply_scale(row_font, pixmap, ball_h, pct_minw, row_spacing)
 
         isz = px(15)  # BASE_ICON_PX from dex_panel
         from ui_icons import icon_pixmap
@@ -310,18 +247,16 @@ class BattlePanel(QWidget):
         self._balls_btn.setIcon(QIcon(icon_pixmap("ball", isz, "#cfd2d6")))
         self._balls_btn.setIconSize(QSize(isz, isz))
         self._balls_btn.setFixedSize(isz + px(6), isz + px(6))
-        self._profile_btn.setIcon(QIcon(icon_pixmap("gear", isz, "#cfd2d6")))
-        self._profile_btn.setIconSize(QSize(isz, isz))
-        self._profile_btn.setFixedSize(isz + px(6), isz + px(6))
+        self._settings_btn.setIcon(QIcon(icon_pixmap("gear", isz, "#cfd2d6")))
+        self._settings_btn.setIconSize(QSize(isz, isz))
+        self._settings_btn.setFixedSize(isz + px(6), isz + px(6))
 
         self._col.setContentsMargins(
             px(BASE_MARGIN_X), px(BASE_MARGIN_Y), px(BASE_MARGIN_X), px(BASE_MARGIN_Y)
         )
         self._col.setSpacing(px(BASE_COL_SPACING))
         self._header.setSpacing(px(BASE_HEADER_SPACING))
-        self._balls_layout.setSpacing(px(BASE_ROW_SPACING))
-        for row in self._row_layouts:
-            row.setSpacing(px(BASE_ROW_SPACING))
+        self._balls_layout.setSpacing(row_spacing)
 
         # reload the current sprite at the new size and force a re-dock
         if self._current_dex is not None:
@@ -362,7 +297,7 @@ class BattlePanel(QWidget):
         if is_empty:
             self._sprite.setVisible(False)
             self._hp.setVisible(False)
-            self._name.setText(" ")
+            self._name.setText("")
             self._sub.setText("")
             self._set_status(None)
             self._empty_row.setVisible(True)
@@ -380,18 +315,9 @@ class BattlePanel(QWidget):
         if is_trainer or is_empty:
             order = []
         else:
-            for ball, label in self._pct_labels.items():
-                if unknown:
-                    label.setText("??")
-                    label.setStyleSheet("color: #cccccc;")
-                    continue
-                prob = probs.get(ball)
-                if prob is None:
-                    label.setText("—")
-                    label.setStyleSheet("color: #888888;")
-                else:
-                    label.setText(f"{100 * prob:5.1f}%")
-                    label.setStyleSheet(f"color: {prob_color_hex(prob)};")
+            for name, row in self._ball_rows.items():
+                prob = probs.get(name)
+                row.set_prob(prob, unknown)
             order = (
                 unknown_ball_order(self._ball_names, self._hidden_names)
                 if unknown
@@ -449,29 +375,14 @@ class BattlePanel(QWidget):
             self._balls = None
         self.hide()
 
-    def _check_hover(self) -> None:
-        if not self.isVisible():
-            return
-        over = self.frameGeometry().adjusted(-30, -30, 30, 30).contains(QCursor.pos())
-        self._apply_click_through(not over)
-        
     def _on_settings_click(self) -> None:
-        if self.on_settings_click is not None:
-            pos = self._profile_btn.mapToGlobal(self._profile_btn.rect().bottomLeft())
+        if self.on_settings_click:
+            pos = self._settings_btn.mapToGlobal(self._settings_btn.rect().bottomLeft())
             self.on_settings_click(pos, self)
             
     def _on_balls_click(self) -> None:
         pos = self._balls_btn.mapToGlobal(self._balls_btn.rect().bottomLeft())
         self._toggle_balls(pos, self)
-
-    def _apply_click_through(self, on: bool) -> None:
-        if on == self._click_through:
-            return
-        self._click_through = on
-        hwnd = int(self.winId())
-        ex = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
-        ex = (ex | win32con.WS_EX_TRANSPARENT) if on else (ex & ~win32con.WS_EX_TRANSPARENT)
-        win32gui.SetWindowLong(hwnd, win32con.GWL_EXSTYLE, ex)
 
     def dock_to(self, left: int, top: int, width: int) -> None:
         """Dock below the game's top-left HUD, on the configured side, inside a
@@ -503,15 +414,6 @@ class BattlePanel(QWidget):
             self._last_pos = (self.x(), self.y())
 
     # --- internals ---
-
-    def _px(self, base: float) -> int:
-        return max(1, round(base * self._scale))
-
-    def _font(self, size_px: int, bold: bool = False) -> QFont:
-        f = QFont(self._mono)
-        f.setPixelSize(size_px)
-        f.setBold(bold)
-        return f
 
     def _set_status(self, status: str | None) -> None:
         badge = status_badge(status)
@@ -627,34 +529,3 @@ class BattlePanel(QWidget):
         if self.on_set_all_balls is not None:
             self.on_set_all_balls(visible)
         self._open_balls()
-
-
-def _demo() -> None:
-    import json
-    import sys
-
-    from PyQt6.QtWidgets import QApplication
-
-    import paths
-
-    data = paths.DATA_DIR
-    balls = [b["name"] for b in json.loads((data / "balls.json").read_text("utf-8"))["balls"]]
-
-    app = QApplication(sys.argv)
-    ov = BattlePanel(balls)
-    sample = {
-        "Poké Ball": 0.098,
-        "Great Ball": 0.147,
-        "Ultra Ball": 0.196,
-        "Net Ball": 0.343,
-        "Quick Ball": 0.49,
-        "Dusk Ball": 0.245,
-    }
-    ov.show_battle(419, "Floatzel", 75, 2, sample, level=24, status="psn", hp_pct=58)
-    ov.move(200, 200)  # standalone: no game window to dock to
-    ov.show()
-    sys.exit(app.exec())
-
-
-if __name__ == "__main__":
-    _demo()
