@@ -589,7 +589,7 @@ class LiveLoop:
         else:
             from battle_reader import BattleReading, BattleState
             reading = BattleReading(state=BattleState.NO_BATTLE, bars=[], is_horde=False)
-            in_battle = bt.menu_present or bt.action or bt.caught or ui_present
+            in_battle = bt.menu_present or bt.action or bt.caught
 
         grace = battle_end_grace(
             self._is_trainer,
