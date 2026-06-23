@@ -91,6 +91,14 @@ def read_location(frame_bgr: np.ndarray, cal: LocationCalibration) -> str:
     return clean_location(" ".join(texts)) if texts else ""
 
 
+def read_location_and_clock(frame_bgr: np.ndarray, loc_cal: LocationCalibration, time_cal: LocationCalibration) -> tuple[str, int | None]:
+    """Read both the location and the game clock in a single background task.
+    This avoids blocking the main thread for the clock OCR."""
+    loc = read_location(frame_bgr, loc_cal)
+    clock = read_game_clock(frame_bgr, time_cal)
+    return loc, clock
+
+
 # Matches the HUD clock "HH:MM" (24h), tolerating a '.' for ':' from OCR.
 _CLOCK = re.compile(r"\b([01]?\d|2[0-3])\s*[:.]\s*([0-5]\d)\b")
 
