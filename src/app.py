@@ -114,9 +114,9 @@ MENU_STABLE_FRAMES = 2
 # menu hasn't advanced for this long, so a stale async read right after a real
 # turn advance can't briefly drag the count down.
 TURN_DOWN_GUARD_S = 3.0
-# Location OCR for the dex panel is comparatively expensive and the location
-# changes slowly, so refresh it at most this often while walking around (IDLE).
-DEX_LOC_INTERVAL_S = 2.5
+# IDLE state location OCR throttle. Location changes are relatively infrequent.
+# A lower interval increases UI responsiveness at the cost of slightly higher CPU usage while walking.
+DEX_LOC_INTERVAL_S = 0.0
 # Don't hide the dex panel on a single failed location read: a garbled OCR or a
 # screen transition briefly makes the HUD unreadable. Keep the last good location
 # up until this many consecutive misses (~DEX_LOC_INTERVAL_S apart) confirm we've
@@ -659,51 +659,137 @@ class LiveLoop:
         # dex panel over the catch overlay.
         dex_due = now - self._last_loc_check >= DEX_LOC_INTERVAL_S
         loc_future = getattr(self, "_loc_future", None)
+        queued_frame = getattr(self, "_queued_loc_frame", None)
         if self.state is AppState.IDLE and self.dex is not None and self.mode_override != "battle":
             import location_reader
+            import cv2
 
             mask = location_reader.extract_location_mask(frame, self.cal.location)
             if mask is not None:
-                changed = self._last_loc_mask is None or not np.array_equal(
-                    mask, self._last_loc_mask
-                )
-                if changed and dex_due and loc_future is None:
-                    if not self._last_hud and self.dex_panel is not None:
-                        # Show a placeholder UI while the very first location OCR finishes
-                        # in the background
-                        from dex_session import LocationView
-                        from game_time import Period
+                # Tolerate small pixel flickers (e.g. from background rain/snow passing the threshold)
+                # to prevent the OCR engine from looping infinitely. A real location change (text changing
+                # or banner sliding) will alter thousands of pixels.
+                def _mask_changed(m1, m2) -> bool:
+                    if m1 is None or m2 is None:
+                        return True
+                    
+                    # Compute absolute difference between masks
+                    diff = cv2.absdiff(m1, m2)
+                    
+                    # Instead of erosion (which mathematically destroys 1-pixel-thick fonts at low DPI),
+                    # we use a Gaussian blur to find DENSE clusters of differences. Scattered rain streaks 
+                    # and 1-pixel edge flickers will blur into very low intensity (< 50). A real character 
+                    # changing (like '4' to '5') creates a dense cluster of differences that will accumulate 
+                    # into high intensity (> 100) when blurred.
+                    blurred = cv2.GaussianBlur(diff, (5, 5), 0)
+                    _, dense_diff = cv2.threshold(blurred, 100, 255, cv2.THRESH_BINARY)
+                    
+                    # If any dense clusters survive the threshold, it's a real text change
+                    return np.count_nonzero(dense_diff) > 0
 
-                        dummy_view = LocationView(
-                            route="Reading location...",
-                            region="Please wait",
-                            period=Period.DAY,
-                            season=0,
-                            entries=[],
-                        )
-                        self.dex_panel.apply_scale(
-                            self.settings.panel_scale or scale_for_window(client_rect.height)
-                        )
-                        self.dex_panel.show_here(dummy_view)
-                        self.dex_panel.dock_to(client_rect.left, client_rect.top, client_rect.width)
+                if _mask_changed(mask, getattr(self, "_last_seen_mask", None)):
+                    self._last_seen_mask = mask
+                    self._mask_stable_since = now
 
-                    self._loc_future = self.pool.submit(
-                        location_reader.read_location, frame.copy(), self.cal.location
-                    )
-                    self._last_loc_mask_pending = mask
+                changed = _mask_changed(mask, self._last_loc_mask)
+                
+                if not changed:
+                    self._mask_changed_since = None
+                elif getattr(self, "_mask_changed_since", None) is None:
+                    self._mask_changed_since = now
+                    
+                # Wait for the mask to be perfectly still for 0.4s (animation finished)
+                # to guarantee we only pass sharp images to the OCR engine.
+                is_stable = now - getattr(self, "_mask_stable_since", now) >= 0.4
+                
+                changed_since = getattr(self, "_mask_changed_since", None)
+                
+                # Only read when the mask is perfectly stable (camera stopped panning).
+                # Removing the 1.0s override completely stops it from triggering while running.
+                ready = is_stable
+                
+                if changed and ready and dex_due:
+                    # If the banner slid away or is completely empty, don't waste 4.5s running OCR on nothing.
+                    # This prevents the queue from jamming, ensuring the thread is completely free for the next route.
+                    if np.count_nonzero(mask) < (mask.size * 0.005):
+                        self._last_loc_mask = mask
+                        self._mask_changed_since = None
+                        self._queued_loc_frame = None
+                        self._queued_loc_mask = None
+                    elif loc_future is None:
+                        if not self._last_hud and self.dex_panel is not None:
+                            # Show a placeholder UI while the very first location OCR finishes
+                            # in the background
+                            from dex_session import LocationView
+                            from game_time import Period
+    
+                            dummy_view = LocationView(
+                                route="Reading location...",
+                                region="Please wait",
+                                period=Period.DAY,
+                                season=0,
+                                entries=[],
+                            )
+                            self.dex_panel.apply_scale(
+                                self.settings.panel_scale or scale_for_window(client_rect.height)
+                            )
+                            self.dex_panel.show_here(dummy_view)
+                            self.dex_panel.dock_to(client_rect.left, client_rect.top, client_rect.width)
+    
+                        self._loc_future = self.pool.submit(
+                            location_reader.read_location, frame.copy(), self.cal.location
+                        )
+                        self._pending_loc_mask = mask.copy()
+                        if self.dex_panel is not None:
+                            self.dex_panel.set_loading(True)
+                    else:
+                        # OCR is currently busy processing the previous location, but a NEW location 
+                        # banner has appeared and stabilized! Take a snapshot of it right now before
+                        # it vanishes, so we can process it the millisecond the thread frees up.
+                        self._queued_loc_frame = frame.copy()
+                        self._queued_loc_mask = mask.copy()
+                        # Update baseline so we don't keep queuing the same frame
+                        self._last_loc_mask = mask
 
                 if getattr(self, "_loc_future", None) is not None and self._loc_future.done():  # type: ignore[union-attr]
-                    self._loc_ocr_raw = self._loc_future.result() if self._loc_future else ""
+                    ocr_result = self._loc_future.result() if self._loc_future else ""
                     self._loc_future = None
-                    self._last_loc_mask = getattr(self, "_last_loc_mask_pending", mask)
-                    self._last_loc_check = now
+                    
+                    if not _mask_changed(mask, getattr(self, "_pending_loc_mask", None)):
+                        self._last_loc_mask = mask
+                        self._last_loc_check = now
+                        self._loc_ocr_raw = ocr_result
+                    else:
+                        # The screen changed while we were reading. If we have a queued snapshot,
+                        # this result is stale so discard it. If we don't have a snapshot, we might 
+                        # be on an empty screen, so keep the result as our last known location.
+                        if getattr(self, "_queued_loc_frame", None) is None:
+                            self._loc_ocr_raw = ocr_result
+                        self._last_loc_check = 0.0
+
+                    # If we captured a snapshot of a missed banner, process it instantly!
+                    if getattr(self, "_queued_loc_frame", None) is not None:
+                        import location_reader
+                        self._loc_future = self.pool.submit(
+                            location_reader.read_location, self._queued_loc_frame, self.cal.location
+                        )
+                        self._pending_loc_mask = self._queued_loc_mask
+                        self._queued_loc_frame = None
+                        self._queued_loc_mask = None
+                        if self.dex_panel is not None:
+                            self.dex_panel.set_loading(True)
+                    elif self.dex_panel is not None:
+                        self.dex_panel.set_loading(False)
 
                 view = self._update_dex(self._loc_ocr_raw)
 
-                if not self._last_hud and self._loc_future is not None:
+                if not self._last_hud and getattr(self, "_loc_future", None) is not None:
                     # We are displaying the dummy view waiting for the very first location read;
-                    # don't hide it
+                    # don't hide it, and force the loading spinner to animate (since view is None
+                    # and show_here isn't being called every frame yet).
                     action = "keep"
+                    if self.dex_panel is not None:
+                        self.dex_panel.set_loading(True)
                 else:
                     action, self._loc_miss_streak = dex_panel_action(
                         view is not None, self._loc_miss_streak, hide_after=DEX_LOC_MISS_HIDE
@@ -1130,12 +1216,15 @@ class LiveLoop:
                 return tuple(re.findall(r"\d+", s))
 
             if extract_digits(hud_name) == extract_digits(self._last_hud):
-                if fuzz.ratio(hud_name, self._last_hud) >= 85.0:
-                    hud_name = self._last_hud
+                if fuzz.ratio(hud_name.lower(), self._last_hud.lower()) >= 75.0:
+                    if not self.dex.is_exact_location(hud_name):
+                        hud_name = self._last_hud
 
         view = self.dex.on_location(hud_name)
         if view is not None:
-            self._last_hud = hud_name  # remember only locations we could resolve
+            # Remember the cleaned/resolved route name instead of the raw OCR text
+            # so the debounce chain has a stable, perfect baseline to compare against.
+            self._last_hud = view.route
         panel = dex_panel_text(view)
         if panel and panel != self._dex_log:
             log.info(panel)

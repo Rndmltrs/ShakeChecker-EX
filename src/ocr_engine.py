@@ -4,36 +4,82 @@ from __future__ import annotations
 
 import numpy as np
 
-_ocr = None
+_ocr_det = None
+_ocr_no_det = None
 
-
-def _engine():
-    global _ocr
-    if _ocr is None:
+def _engine_det():
+    global _ocr_det
+    if _ocr_det is None:
         from rapidocr_onnxruntime import RapidOCR
+        _ocr_det = RapidOCR(
+            use_angle_cls=False,
+            print_verbose=False,
+            intra_op_num_threads=1,
+            inter_op_num_threads=1
+        )
+    return _ocr_det
 
-        _ocr = RapidOCR()
-    return _ocr
+def _engine_no_det():
+    global _ocr_no_det
+    if _ocr_no_det is None:
+        from rapidocr_onnxruntime import RapidOCR
+        _ocr_no_det = RapidOCR(
+            use_det=False,
+            use_angle_cls=False,
+            print_verbose=False,
+            intra_op_num_threads=1,
+            inter_op_num_threads=1
+        )
+    return _ocr_no_det
+
+
+import csv
+import time
+from pathlib import Path
+
+_csv_path = Path("hidden/ocr_performance.csv")
+
+def _log_performance(task: str, duration: float, size: tuple[int, ...]):
+    try:
+        write_header = not _csv_path.exists()
+        _csv_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(_csv_path, "a", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            if write_header:
+                writer.writerow(["timestamp", "task", "duration_s", "width", "height"])
+            h = size[0] if len(size) > 0 else 0
+            w = size[1] if len(size) > 1 else 0
+            writer.writerow([time.strftime("%Y-%m-%dT%H:%M:%S"), task, f"{duration:.3f}", w, h])
+    except Exception:
+        pass
 
 
 def sorted_ocr_lines(result) -> list[str]:
-    """Text lines from a RapidOCR result ordered TOP-TO-BOTTOM by box position.
-    RapidOCR's native detection order is not guaranteed vertical, so callers that
-    care about reading order (e.g. the chat: newest line is at the bottom) must
-    sort explicitly. Each result item is (box, text, score); box is 4 [x, y]
-    points, so the line's top is the smallest y among them."""
+    """Text lines from a RapidOCR result ordered TOP-TO-BOTTOM by box position."""
     if not result:
         return []
     return [t for _b, t, _s in sorted(result, key=lambda r: min(float(p[1]) for p in r[0]))]
 
 
-def run_ocr(image: np.ndarray) -> list[str]:
+def run_ocr(image: np.ndarray, task_name: str = "run_ocr") -> list[str]:
     """OCR an image, returning the detected text lines (empty if none)."""
-    result, _ = _engine()(image)
+    t0 = time.time()
+    result, _ = _engine_det()(image)
+    _log_performance(task_name, time.time() - t0, image.shape)
     return [text for _box, text, _score in result] if result else []
 
 
-def run_ocr_lines(image: np.ndarray) -> list[str]:
+def run_ocr_no_det(image: np.ndarray, task_name: str = "run_ocr_no_det") -> list[str]:
+    """OCR an image bypassing the text-detection network. Use only for pre-cropped single lines."""
+    t0 = time.time()
+    result, _ = _engine_no_det()(image)
+    _log_performance(task_name, time.time() - t0, image.shape)
+    return [text for _box, text, _score in result] if result else []
+
+
+def run_ocr_lines(image: np.ndarray, task_name: str = "run_ocr_lines") -> list[str]:
     """OCR an image, returning the text lines ordered top-to-bottom by position."""
-    result, _ = _engine()(image)
+    t0 = time.time()
+    result, _ = _engine_det()(image)
+    _log_performance(task_name, time.time() - t0, image.shape)
     return sorted_ocr_lines(result)

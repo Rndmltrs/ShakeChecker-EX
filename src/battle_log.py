@@ -51,7 +51,7 @@ def read_turn_number(frame_bgr: np.ndarray, cal: ChatCalibration) -> int | None:
     if crop.size == 0:
         return None
     up = cv2.resize(crop, None, fx=cal.upscale, fy=cal.upscale, interpolation=cv2.INTER_CUBIC)
-    return parse_turn_number(run_ocr_lines(up))
+    return parse_turn_number(run_ocr_lines(up, task_name="chat"))
 
 
 class AsyncChatReader:

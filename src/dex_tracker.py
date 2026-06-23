@@ -224,7 +224,7 @@ class EncounterData:
         }
         if not candidates:
             return []
-        best = process.extractOne(norm, candidates.keys(), scorer=fuzz.WRatio)
+        best = process.extractOne(norm, candidates.keys(), scorer=fuzz.ratio)
         if best is None or best[1] < MATCH_THRESHOLD:
             return []
         return [k for k in candidates[best[0]] if in_region(k)]
@@ -241,6 +241,11 @@ class EncounterData:
             return None
         keys = self._candidate_keys(norm, region.upper() if region else None)
         return keys[0] if len(keys) == 1 else None
+
+    def is_exact(self, hud_name: str) -> bool:
+        """True if the normalized name is an exact match for a known location."""
+        norm = _normalize(hud_name)
+        return norm in self._by_norm
 
     def regions_for_name(self, hud_name: str) -> set[str]:
         """The set of regions a HUD location name could belong to (ignoring any
@@ -260,6 +265,84 @@ class EncounterData:
     def missing_here(self, key: str, period: str, season: int, caught: set[int]) -> list[DexEntry]:
         """Just the uncaught entries (convenience for the dev scripts)."""
         return [e for e in self.entries_here(key, period, season, caught) if not e.caught]
+
+_TOWN_REGIONS = {
+    # Kanto
+    "pallet town": "Kanto",
+    "pewter city": "Kanto",
+    "cerulean city": "Kanto",
+    "vermilion city": "Kanto",
+    "celadon city": "Kanto",
+    "fuchsia city": "Kanto",
+    "saffron city": "Kanto",
+    "cinnabar island": "Kanto",
+    
+    # Johto
+    "new bark town": "Johto",
+    "cherrygrove city": "Johto",
+    "violet city": "Johto",
+    "azalea town": "Johto",
+    "goldenrod city": "Johto",
+    "ecruteak city": "Johto",
+    "olivine city": "Johto",
+    "cianwood city": "Johto",
+    "mahogany town": "Johto",
+    "blackthorn city": "Johto",
+    
+    # Hoenn
+    "littleroot town": "Hoenn",
+    "oldale town": "Hoenn",
+    "rustboro city": "Hoenn",
+    "slateport city": "Hoenn",
+    "mauville city": "Hoenn",
+    "verdanturf town": "Hoenn",
+    "fallarbor town": "Hoenn",
+    "lavaridge town": "Hoenn",
+    "fortree city": "Hoenn",
+    "lilycove city": "Hoenn",
+    "mossdeep city": "Hoenn",
+    "sootopolis city": "Hoenn",
+    "pacifidlog town": "Hoenn",
+    "ever grande city": "Hoenn",
+    
+    # Sinnoh
+    "twinleaf town": "Sinnoh",
+    "sandgem town": "Sinnoh",
+    "jubilife city": "Sinnoh",
+    "oreburgh city": "Sinnoh",
+    "floaroma town": "Sinnoh",
+    "eterna city": "Sinnoh",
+    "hearthome city": "Sinnoh",
+    "solaceon town": "Sinnoh",
+    "veilstone city": "Sinnoh",
+    "pastoria city": "Sinnoh",
+    "celestic town": "Sinnoh",
+    "canalave city": "Sinnoh",
+    "snowpoint city": "Sinnoh",
+    "sunyshore city": "Sinnoh",
+    
+    # Unova
+    "nuvema town": "Unova",
+    "accumula town": "Unova",
+    "striaton city": "Unova",
+    "nacrene city": "Unova",
+    "castelia gate": "Unova",
+    "castelia city": "Unova",
+    "nimbasa city": "Unova",
+    "driftveil city": "Unova",
+    "mistralton city": "Unova",
+    "icirrus city": "Unova",
+    "opelucid city": "Unova",
+    "undella town": "Unova",
+    "lacunosa town": "Unova",
+    "black city": "Unova",
+    "white forest": "Unova",
+    "aspertia city": "Unova",
+    "floccesy town": "Unova",
+    "virbank city": "Unova",
+    "lentimas town": "Unova",
+    "humilau city": "Unova",
+}
 
 
 class RegionResolver:
@@ -287,4 +370,35 @@ class RegionResolver:
         regions = self._data.regions_for_name(hud_name)
         if len(regions) == 1:
             self.region = next(iter(regions))  # name pins the region -> adopt/switch
+        elif not regions:
+            # Check the fallback dictionary for encounter-less towns.
+            norm = _normalize(hud_name)
+            if norm in _TOWN_REGIONS:
+                self.region = _TOWN_REGIONS[norm].upper()
+                
         return self._data.match_location(hud_name, self.region)
+
+    def correct_name(self, hud_name: str) -> str:
+        """Attempt to fix an incomplete OCR name by mapping it to the closest known
+        town or route, ensuring the UI always displays cleanly spelled locations."""
+        norm = _normalize(hud_name)
+        if not norm or self.is_exact(hud_name):
+            return hud_name
+            
+        from rapidfuzz import process, fuzz
+        best_town = process.extractOne(norm, _TOWN_REGIONS.keys(), scorer=fuzz.ratio)
+        if best_town and best_town[1] >= MATCH_THRESHOLD:
+            return best_town[0].title()
+            
+        # Try routes using the digits-restricted fuzzy match
+        keys = self._data._candidate_keys(norm, self.region.upper() if self.region else None)
+        if len(keys) == 1:
+            loc = self._data._locations[keys[0]]
+            return loc["name"]
+            
+        return hud_name
+
+    def is_exact(self, hud_name: str) -> bool:
+        """True if the normalized name exactly matches a known route or encounter-less town."""
+        norm = _normalize(hud_name)
+        return norm in _TOWN_REGIONS or self._data.is_exact(hud_name)

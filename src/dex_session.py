@@ -45,6 +45,7 @@ class DexSession:
         self._resolver = RegionResolver(data)
         self._period_fn = period_fn
         self._season_fn = season_fn
+        self._logged_unknowns: set[str] | None = None
 
     @property
     def region(self) -> str | None:
@@ -55,10 +56,15 @@ class DexSession:
         region-unique location still takes over automatically."""
         self._resolver.region = region.upper() if region else None
 
+    def is_exact_location(self, hud_name: str) -> bool:
+        """True if the OCR name is already perfectly spelled."""
+        return self._resolver.is_exact(hud_name)
+
     def on_location(self, hud_name: str) -> LocationView | None:
         """Resolve the HUD location (updating the tracked region) and build the
         missing-here view for the current time/season. None if the location can't
         be matched yet (unknown name, or an ambiguous one before a region is known)."""
+        hud_name = self._resolver.correct_name(hud_name)
         key = self._resolver.resolve(hud_name)
         period = self._period_fn()
         season = self._season_fn()
@@ -68,8 +74,12 @@ class DexSession:
             # If the name is substantial but unknown (e.g. a city), return an empty view
             # so the panel stays open. Ignore tiny strings to prevent OCR noise flickering.
             if len(hud_name.strip()) > 3:
+                clean_name = hud_name.strip().title()
+                if not self.is_exact_location(clean_name):
+                    self._log_unknown(clean_name)
+                    
                 return LocationView(
-                    hud_name.strip().title(), self.region or "Unknown", period, season, []
+                    clean_name, self.region or "Unknown", period, season, []
                 )
             return None
         entries = self._data.entries_here(key, period.value, season, self._caught.caught)
@@ -89,3 +99,24 @@ class DexSession:
     def set_caught(self, caught: CaughtStore) -> None:
         """Swap the active account's caught store (profile switch)."""
         self._caught = caught
+
+    def _log_unknown(self, name: str) -> None:
+        """Log genuinely unknown locations to a file so the user can review them."""
+        import os
+        log_path = "hidden/locations.log"
+        
+        # Load existing logs on first use to prevent duplicates across app restarts
+        if self._logged_unknowns is None:
+            self._logged_unknowns = set()
+            if os.path.exists(log_path):
+                with open(log_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        self._logged_unknowns.add(line.strip())
+
+        if name in self._logged_unknowns:
+            return
+            
+        self._logged_unknowns.add(name)
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(f"{name}\n")

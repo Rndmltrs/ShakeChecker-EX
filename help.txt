@@ -1,0 +1,40 @@
+Help on class RapidOCR in module rapidocr_onnxruntime.rapid_ocr_api:
+
+class RapidOCR(builtins.object)
+ |  RapidOCR(**kwargs)
+ |
+ |  Methods defined here:
+ |
+ |  __call__(self, img_content: Union[str, np.ndarray, bytes, Path], **kwargs)
+ |      Call self as a function.
+ |
+ |  __init__(self, **kwargs)
+ |      Initialize self.  See help(type(self)) for accurate signature.
+ |
+ |  filter_boxes_rec_by_score(self, dt_boxes, rec_res)
+ |
+ |  get_boxes_img_without_det(self, img, h, w)
+ |
+ |  get_crop_img_list(self, img, dt_boxes)
+ |
+ |  ----------------------------------------------------------------------
+ |  Static methods defined here:
+ |
+ |  init_module(module_name, class_name)
+ |
+ |  sorted_boxes(dt_boxes)
+ |      Sort text boxes in order from top to bottom, left to right
+ |      args:
+ |          dt_boxes(array):detected text boxes with shape [4, 2]
+ |      return:
+ |          sorted boxes(array) with shape [4, 2]
+ |
+ |  ----------------------------------------------------------------------
+ |  Data descriptors defined here:
+ |
+ |  __dict__
+ |      dictionary for instance variables
+ |
+ |  __weakref__
+ |      list of weak references to the object
+

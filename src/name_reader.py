@@ -117,7 +117,7 @@ class NameReader:
         if crop.size == 0:
             return None
         up = cv2.resize(crop, None, fx=c.upscale, fy=c.upscale, interpolation=cv2.INTER_CUBIC)
-        raw = " ".join(run_ocr(up))
+        raw = " ".join(run_ocr(up, task_name="name"))
         # An Alpha banner reads "Alpha <Species>"; strip the marker before the
         # match so the base species resolves, and remember it for the rate below.
         is_alpha, match_text = strip_alpha_prefix(raw)

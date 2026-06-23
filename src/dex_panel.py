@@ -227,7 +227,16 @@ class DexPanel(BaseOverlay):
         keep_caught = self.get_keep_caught() if self.get_keep_caught is not None else True
         entries = display_order(view.entries, keep_caught=keep_caught)
         needed = sum(1 for e in view.entries if not e.caught)
-        self._title.setText(view.route if view.route == "ShakeChecker" else view.route.title())
+        
+        title_text = view.route if view.route == "ShakeChecker" else view.route.title()
+        self._current_title_text = title_text
+        if getattr(self, "_is_loading", False):
+            import time
+            spinners = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+            spinner = spinners[int(time.time() * 15) % len(spinners)]
+            self._title.setText(f"{title_text} <span style='color:#888;'>{spinner}</span>")
+        else:
+            self._title.setText(title_text)
         
         if view.route == "ShakeChecker":
             self._subtitle.setText(view.region.title())
@@ -277,6 +286,18 @@ class DexPanel(BaseOverlay):
         self._apply_click_through(True)  # start passing input through
         if not self._hover.isActive():
             self._hover.start()
+
+    def set_loading(self, is_loading: bool) -> None:
+        """Show a small spinner next to the title while OCR is running."""
+        self._is_loading = is_loading
+        title = getattr(self, "_current_title_text", self._title.text())
+        if is_loading:
+            import time
+            spinners = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+            spinner = spinners[int(time.time() * 15) % len(spinners)]
+            self._title.setText(f"{title} <span style='color:#888;'>{spinner}</span>")
+        else:
+            self._title.setText(title)
 
     def hide_panel(self) -> None:
         self._hover.stop()
