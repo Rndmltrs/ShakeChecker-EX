@@ -43,8 +43,11 @@ SEASON_NAMES = ("Spring", "Summer", "Autumn", "Winter")
 
 def game_minute_of_day(now_utc: _dt.datetime) -> int:
     """In-game minute-of-day (0..1439) for a UTC datetime."""
-    minutes_since_midnight = now_utc.hour * 60 + now_utc.minute
-    return (minutes_since_midnight % REAL_CYCLE_MINUTES) * GAME_MINUTES_PER_REAL
+    # Factor in seconds so the clock doesn't stutter in 4-minute blocks!
+    seconds_since_midnight = now_utc.hour * 3600 + now_utc.minute * 60 + now_utc.second
+    real_seconds_cycle = seconds_since_midnight % (REAL_CYCLE_MINUTES * 60)
+    game_seconds = real_seconds_cycle * GAME_MINUTES_PER_REAL
+    return game_seconds // 60
 
 
 def period_for_game_minute(game_minute: int) -> Period:
