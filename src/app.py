@@ -88,6 +88,7 @@ SPECIES_PATH = DATA / "species_core.json"
 TEMPLATES_DIR = DATA / "templates"
 ENCOUNTERS_PATH = DATA / "encounters.json"
 LEGENDARIES_PATH = DATA / "legendaries.json"
+AREA_INDEX_PATH = DATA / "area_index.json"
 USERDATA = paths.userdata_dir()  # per-account caught lists (%APPDATA% when frozen)
 
 WAITING_POLL_S = 2.0
@@ -382,10 +383,16 @@ class LiveLoop:
         self.battle_text = BattleTextReader(cal.battle_text, TEMPLATES_DIR)
         self.chat = AsyncChatReader(cal.chat)  # background turn-OCR (correction only)
         self.capture = WindowCapture()
-
+        # The main thread runs the UI and frame capture; the slow AI runs here.
+        # Scale workers based on hardware to prevent UI lockups on low-end CPUs,
+        # while letting high-end rigs chew through OCR tasks instantly.
+        # (Cap at 4 since the app rarely queues more than 3 simultaneous tasks).
+        import os
+        cores = os.cpu_count() or 4
+        workers = max(1, min(4, cores - 2))
+        
         from concurrent.futures import ThreadPoolExecutor
-
-        self.pool = ThreadPoolExecutor(max_workers=3)
+        self.pool = ThreadPoolExecutor(max_workers=workers)
 
         self.state = AppState.WAITING
         self.hwnd: int | None = None
@@ -454,6 +461,9 @@ class LiveLoop:
         )
         status_src = f"override {self.status_override}" if self.status_override else "from screen"
         log.info(f"species: {species_src}, status: {status_src}")
+        log.info("loading OCR neural networks...")
+        import ocr_engine
+        ocr_engine.preload()
         log.info("waiting for PokeMMO window...")
         QTimer.singleShot(0, self.step)
 
@@ -660,7 +670,7 @@ class LiveLoop:
         dex_due = now - self._last_loc_check >= DEX_LOC_INTERVAL_S
         loc_future = getattr(self, "_loc_future", None)
         queued_frame = getattr(self, "_queued_loc_frame", None)
-        if self.state is AppState.IDLE and self.dex is not None and self.mode_override != "battle":
+        if not in_battle and self.dex is not None:
             import location_reader
             import cv2
 
@@ -781,31 +791,32 @@ class LiveLoop:
                     elif self.dex_panel is not None:
                         self.dex_panel.set_loading(False)
 
-                view = self._update_dex(self._loc_ocr_raw)
+                if self.mode_override == "dex":
+                    view = self._update_dex(self._loc_ocr_raw)
 
-                if not self._last_hud and getattr(self, "_loc_future", None) is not None:
-                    # We are displaying the dummy view waiting for the very first location read;
-                    # don't hide it, and force the loading spinner to animate (since view is None
-                    # and show_here isn't being called every frame yet).
-                    action = "keep"
-                    if self.dex_panel is not None:
-                        self.dex_panel.set_loading(True)
-                else:
-                    action, self._loc_miss_streak = dex_panel_action(
-                        view is not None, self._loc_miss_streak, hide_after=DEX_LOC_MISS_HIDE
-                    )
-
-                if self.dex_panel is not None:
-                    if view is not None:  # matched -> show (action == "show")
-                        self.dex_panel.apply_scale(
-                            self.settings.panel_scale or scale_for_window(client_rect.height)
+                    if not self._last_hud and getattr(self, "_loc_future", None) is not None:
+                        # We are displaying the dummy view waiting for the very first location read;
+                        # don't hide it, and force the loading spinner to animate (since view is None
+                        # and show_here isn't being called every frame yet).
+                        action = "keep"
+                        if self.dex_panel is not None:
+                            self.dex_panel.set_loading(True)
+                    else:
+                        action, self._loc_miss_streak = dex_panel_action(
+                            view is not None, self._loc_miss_streak, hide_after=DEX_LOC_MISS_HIDE
                         )
-                        if self.mode_override != "battle":
-                            self.dex_panel.show_here(view)
-                        self.dex_panel.dock_to(client_rect.left, client_rect.top, client_rect.width)
-                    elif action == "hide":  # several misses in a row -> truly left the area
-                        self.dex_panel.hide_panel()
-                    # "keep": a transient miss -> leave the last good panel on screen
+
+                    if self.dex_panel is not None:
+                        if view is not None:  # matched -> show (action == "show")
+                            self.dex_panel.apply_scale(
+                                self.settings.panel_scale or scale_for_window(client_rect.height)
+                            )
+                            if self.mode_override != "battle":
+                                self.dex_panel.show_here(view)
+                            self.dex_panel.dock_to(client_rect.left, client_rect.top, client_rect.width)
+                        elif action == "hide":  # several misses in a row -> truly left the area
+                            self.dex_panel.hide_panel()
+                        # "keep": a transient miss -> leave the last good panel on screen
 
         # Apply manual mode override UI forcing
         if self.mode_override == "dex":
@@ -899,57 +910,43 @@ class LiveLoop:
         # must NOT drop. Reading once at battle start captures exactly that. Retry
         # until a non-empty name is read (the first battle frame can be mid-transition).
         if not self._loc_read:
-            from location_reader import read_location_and_clock
+            self._loc_read = True
+            loc = self._loc_ocr_raw
+            if loc:
+                from location_reader import is_cave_location
 
-            battle_loc_future = getattr(self, "_battle_loc_future", None)
-            if battle_loc_future is None:
-                self._battle_loc_future = self.pool.submit(
-                    read_location_and_clock, frame.copy(), self.cal.location, self.cal.hud_time
-                )
-                battle_loc_future = self._battle_loc_future
+                cave = is_cave_location(loc)
+                night = is_dusk_ball_night(current_game_minute())
+                self.dusk_active = cave or night
+                bits = [b for b, on in (("cave", cave), ("night", night)) if on]
+                note = f" ({'+'.join(bits)} -> Dusk Ball boosted)" if bits else ""
+                log.info(f"location: {loc}{note}")
 
-            if battle_loc_future.done():
-                loc, clock = battle_loc_future.result()
-                self._battle_loc_future = None
-                self._loc_read = True  # Stop retrying, don't saturate thread pool
-                if loc:
-                    from location_reader import is_cave_location
+            if self.dex is not None:
+                view = self._update_dex(loc)
+                if view is not None and self.dex_panel is not None:
+                    self.dex_panel.apply_scale(
+                        self.settings.panel_scale or scale_for_window(rect.height)
+                    )
+                    self.dex_panel.show_here(view)
+                    self.dex_panel.dock_to(rect.left, rect.top, rect.width)
+                elif view is None and self.dex_panel is not None and not loc:
+                    # If we started mid-battle, HUD is hidden so loc is empty.
+                    from dex_session import LocationView
+                    from game_time import Period
 
-                    cave = is_cave_location(loc)
-                    if clock is not None:
-                        night = is_dusk_ball_night(clock)
-                    else:
-                        night = is_dusk_ball_night(current_game_minute())
-                    self.dusk_active = cave or night
-                    bits = [b for b, on in (("cave", cave), ("night", night)) if on]
-                    note = f" ({'+'.join(bits)} -> Dusk Ball boosted)" if bits else ""
-                    log.info(f"location: {loc}{note}")
-
-                if self.dex is not None:
-                    view = self._update_dex(loc)
-                    if view is not None and self.dex_panel is not None:
-                        self.dex_panel.apply_scale(
-                            self.settings.panel_scale or scale_for_window(rect.height)
-                        )
-                        self.dex_panel.show_here(view)
-                        self.dex_panel.dock_to(rect.left, rect.top, rect.width)
-                    elif view is None and self.dex_panel is not None and not loc:
-                        # If we started mid-battle, HUD is hidden so loc is empty.
-                        from dex_session import LocationView
-                        from game_time import Period
-
-                        dummy_view = LocationView(
-                            route="Unknown Route",
-                            region="Finish battle to read HUD",
-                            period=Period.DAY,
-                            season=0,
-                            entries=[],
-                        )
-                        self.dex_panel.apply_scale(
-                            self.settings.panel_scale or scale_for_window(rect.height)
-                        )
-                        self.dex_panel.show_here(dummy_view)
-                        self.dex_panel.dock_to(rect.left, rect.top, rect.width)
+                    dummy_view = LocationView(
+                        route="Unknown Route",
+                        region="Finish battle to read HUD",
+                        period=Period.DAY,
+                        season=0,
+                        entries=[],
+                    )
+                    self.dex_panel.apply_scale(
+                        self.settings.panel_scale or scale_for_window(rect.height)
+                    )
+                    self.dex_panel.show_here(dummy_view)
+                    self.dex_panel.dock_to(rect.left, rect.top, rect.width)
 
         asleep = reading.state is BattleState.SINGLE and reading.bars[0].status is Status.SLP
 
@@ -963,9 +960,10 @@ class LiveLoop:
         # Poll BEFORE submit: consume any finished read first, then start the next
         # one. Throttled to 1.5s so background OCR doesn't burn CPU spinning.
         chat_turn = self.chat.poll()
-        if now - getattr(self, "_last_chat_submit", 0.0) >= 1.5:
-            self.chat.submit(frame)
-            self._last_chat_submit = now
+        if self.mode_override != "dex":
+            if now - getattr(self, "_last_chat_submit", 0.0) >= 1.5:
+                self.chat.submit(frame)
+                self._last_chat_submit = now
 
         if chat_turn is not None and chat_turn != self._last_chat_turn:
             self._last_chat_turn = chat_turn  # shows the chat IS read (dedup the log)
@@ -1348,7 +1346,7 @@ def build_dex(account_override: str | None) -> DexSession | None:
     if not ENCOUNTERS_PATH.exists():
         log.info("dex: encounters.json not found (run scripts/update_data.py) — dex disabled")
         return None
-    data = EncounterData.load(ENCOUNTERS_PATH, LEGENDARIES_PATH)
+    data = EncounterData.load(ENCOUNTERS_PATH, LEGENDARIES_PATH, AREA_INDEX_PATH)
     cfg = AccountConfig.load(USERDATA)
     account = cfg.resolve_active(account_override)
     if account is None:

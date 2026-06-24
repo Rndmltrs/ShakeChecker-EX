@@ -32,6 +32,11 @@ def _engine_no_det():
         )
     return _ocr_no_det
 
+def preload() -> None:
+    """Initialize both engines immediately so the ONNX C++ constructor doesn't lock the GIL mid-game."""
+    _engine_det()
+    _engine_no_det()
+
 
 import csv
 import time

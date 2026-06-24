@@ -58,7 +58,7 @@ class AsyncChatReader:
     """Runs the slow chat-turn OCR on a single background thread so it never
     blocks the loop. submit() a frame (no-op while one is in flight); poll() the
     finished turn (or None). Uses its own OCR engine to avoid contending with the
-    main thread's name/location OCR."""
+    primary pool."""
 
     def __init__(self, cal: ChatCalibration) -> None:
         self._cal = cal

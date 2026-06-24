@@ -183,19 +183,24 @@ class EncounterData:
     """Loads the vendored encounter + legendary data and answers location/missing
     queries. Read-only; safe to share."""
 
-    def __init__(self, locations: dict[str, dict], legendaries: set[int]) -> None:
+    def __init__(self, locations: dict[str, dict], legendaries: set[int], area_index: dict[str, str]) -> None:
         self._locations = locations
         self._legendaries = legendaries
+        self._area_index = area_index
         # normalized name -> [keys] (a name can repeat across regions)
         self._by_norm: dict[str, list[str]] = {}
         for key, loc in locations.items():
             self._by_norm.setdefault(_normalize(loc["name"]), []).append(key)
 
     @classmethod
-    def load(cls, encounters_path: Path | str, legendaries_path: Path | str) -> EncounterData:
+    def load(
+        cls, encounters_path: Path | str, legendaries_path: Path | str, area_index_path: Path | str
+    ) -> EncounterData:
         enc = json.loads(Path(encounters_path).read_text("utf-8"))["locations"]
         leg = set(json.loads(Path(legendaries_path).read_text("utf-8"))["ids"])
-        return cls(enc, leg)
+        raw_idx = json.loads(Path(area_index_path).read_text("utf-8"))
+        area_idx = {loc: region for region, locs in raw_idx.items() for loc in locs}
+        return cls(enc, leg, area_idx)
 
     def location_name(self, key: str) -> str:
         return self._locations[key]["name"]
@@ -266,84 +271,6 @@ class EncounterData:
         """Just the uncaught entries (convenience for the dev scripts)."""
         return [e for e in self.entries_here(key, period, season, caught) if not e.caught]
 
-_TOWN_REGIONS = {
-    # Kanto
-    "pallet town": "Kanto",
-    "pewter city": "Kanto",
-    "cerulean city": "Kanto",
-    "vermilion city": "Kanto",
-    "celadon city": "Kanto",
-    "fuchsia city": "Kanto",
-    "saffron city": "Kanto",
-    "cinnabar island": "Kanto",
-    
-    # Johto
-    "new bark town": "Johto",
-    "cherrygrove city": "Johto",
-    "violet city": "Johto",
-    "azalea town": "Johto",
-    "goldenrod city": "Johto",
-    "ecruteak city": "Johto",
-    "olivine city": "Johto",
-    "cianwood city": "Johto",
-    "mahogany town": "Johto",
-    "blackthorn city": "Johto",
-    
-    # Hoenn
-    "littleroot town": "Hoenn",
-    "oldale town": "Hoenn",
-    "rustboro city": "Hoenn",
-    "slateport city": "Hoenn",
-    "mauville city": "Hoenn",
-    "verdanturf town": "Hoenn",
-    "fallarbor town": "Hoenn",
-    "lavaridge town": "Hoenn",
-    "fortree city": "Hoenn",
-    "lilycove city": "Hoenn",
-    "mossdeep city": "Hoenn",
-    "sootopolis city": "Hoenn",
-    "pacifidlog town": "Hoenn",
-    "ever grande city": "Hoenn",
-    
-    # Sinnoh
-    "twinleaf town": "Sinnoh",
-    "sandgem town": "Sinnoh",
-    "jubilife city": "Sinnoh",
-    "oreburgh city": "Sinnoh",
-    "floaroma town": "Sinnoh",
-    "eterna city": "Sinnoh",
-    "hearthome city": "Sinnoh",
-    "solaceon town": "Sinnoh",
-    "veilstone city": "Sinnoh",
-    "pastoria city": "Sinnoh",
-    "celestic town": "Sinnoh",
-    "canalave city": "Sinnoh",
-    "snowpoint city": "Sinnoh",
-    "sunyshore city": "Sinnoh",
-    
-    # Unova
-    "nuvema town": "Unova",
-    "accumula town": "Unova",
-    "striaton city": "Unova",
-    "nacrene city": "Unova",
-    "castelia gate": "Unova",
-    "castelia city": "Unova",
-    "nimbasa city": "Unova",
-    "driftveil city": "Unova",
-    "mistralton city": "Unova",
-    "icirrus city": "Unova",
-    "opelucid city": "Unova",
-    "undella town": "Unova",
-    "lacunosa town": "Unova",
-    "black city": "Unova",
-    "white forest": "Unova",
-    "aspertia city": "Unova",
-    "floccesy town": "Unova",
-    "virbank city": "Unova",
-    "lentimas town": "Unova",
-    "humilau city": "Unova",
-}
-
 
 class RegionResolver:
     """Tracks the current region so ambiguous location names ("Route 5" exists in
@@ -373,8 +300,8 @@ class RegionResolver:
         elif not regions:
             # Check the fallback dictionary for encounter-less towns.
             norm = _normalize(hud_name)
-            if norm in _TOWN_REGIONS:
-                self.region = _TOWN_REGIONS[norm].upper()
+            if norm in self._data._area_index:
+                self.region = self._data._area_index[norm].upper()
                 
         return self._data.match_location(hud_name, self.region)
 
@@ -386,7 +313,7 @@ class RegionResolver:
             return hud_name
             
         from rapidfuzz import process, fuzz
-        best_town = process.extractOne(norm, _TOWN_REGIONS.keys(), scorer=fuzz.ratio)
+        best_town = process.extractOne(norm, self._data._area_index.keys(), scorer=fuzz.ratio)
         if best_town and best_town[1] >= MATCH_THRESHOLD:
             return best_town[0].title()
             
@@ -401,4 +328,4 @@ class RegionResolver:
     def is_exact(self, hud_name: str) -> bool:
         """True if the normalized name exactly matches a known route or encounter-less town."""
         norm = _normalize(hud_name)
-        return norm in _TOWN_REGIONS or self._data.is_exact(hud_name)
+        return norm in self._data._area_index or self._data.is_exact(hud_name)
