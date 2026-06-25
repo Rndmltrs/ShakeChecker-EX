@@ -68,26 +68,6 @@ def battle_end_grace(
         return anim_s
     return normal_s
 
-
-def dex_panel_action(matched: bool, miss_streak: int, *, hide_after: int) -> tuple[str, int]:
-    """Decide what to do with the overworld dex panel after one location read, and
-    return (action, new_miss_streak).
-
-    A single garbled location OCR -- or a screen transition where the HUD is briefly
-    unreadable -- must NOT hide the panel; that made it vanish mid-route and never
-    come back. So a miss keeps the last good panel up until enough misses pile up:
-
-    - matched read                         -> ("show", 0)
-    - unmatched, still under the threshold  -> ("keep", miss_streak + 1)
-    - unmatched, hit `hide_after` in a row  -> ("hide", miss_streak + 1)
-      (genuinely left to an area not in the index, e.g. a house/cave)
-    """
-    if matched:
-        return "show", 0
-    streak = miss_streak + 1
-    return ("hide" if streak >= hide_after else "keep"), streak
-
-
 def apply_chat_turn(
     tracker: TurnTracker,
     chat_turn: int | None,

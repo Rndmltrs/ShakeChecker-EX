@@ -1,6 +1,6 @@
 """Find the PokeMMO window and capture its client area (read-only).
 
-Strictly passive: enumerates windows and grabs pixels via mss. Never sends
+Strictly passive: enumerates windows and grabs pixels. Never sends
 input, never touches the game process.
 """
 
@@ -10,9 +10,12 @@ import ctypes
 from ctypes import wintypes
 from dataclasses import dataclass
 
-import mss
 import numpy as np
 import win32gui
+import win32ui
+import win32con
+import threading
+import logging
 
 WINDOW_TITLE = "PokeMMO"
 
@@ -80,13 +83,12 @@ def fold_confusables(text: str) -> str:
 
 def title_matches(title: str) -> bool:
     """True only if `title` is exactly the PokeMMO game window title (homoglyph-
-    folded), not a browser tab that merely starts with 'PokeMMO' (e.g.
-    'PokeMMO Help - Google Chrome'). The game window is titled exactly 'PokeMMO'."""
+    folded), not a browser tab that merely starts with 'PokeMMO'."""
     return fold_confusables(title).strip().lower() == WINDOW_TITLE.lower()
 
 
 def set_dpi_awareness() -> None:
-    """Must run at startup before any coordinate work (CLAUDE.md hard rule)."""
+    """Must run at startup before any coordinate work."""
     ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PROCESS_PER_MONITOR_DPI_AWARE
 
 
@@ -99,13 +101,7 @@ class ClientRect:
 
 
 def iter_visible_windows() -> list[tuple[int, str]]:
-    """(hwnd, title) for every visible top-level window.
-
-    The callback is exception-safe per window: a single window that errors on
-    IsWindowVisible/GetWindowText (e.g. a higher-integrity or already-closing
-    window) is skipped instead of aborting the whole enumeration. It always
-    returns True so enumeration runs to completion regardless of Z-order.
-    """
+    """(hwnd, title) for every visible top-level window."""
     windows: list[tuple[int, str]] = []
 
     def on_window(hwnd: int, _param: object) -> bool:
@@ -121,9 +117,7 @@ def iter_visible_windows() -> list[tuple[int, str]]:
 
 
 def find_pokemmo_hwnd() -> int | None:
-    """Visible window whose (homoglyph-folded) title is exactly 'PokeMMO'.
-    If several match, pick the one with the largest client area (the real game
-    window, not a zero-sized helper/tooltip)."""
+    """Visible window whose (homoglyph-folded) title is exactly 'PokeMMO'."""
     best: int | None = None
     best_area = -1
     for hwnd, title in iter_visible_windows():
@@ -141,28 +135,23 @@ def is_window_alive(hwnd: int) -> bool:
 
 
 def get_client_rect(hwnd: int) -> ClientRect | None:
-    """Client area of `hwnd` in screen coordinates, or None if not usable
-    (window gone, minimized, or zero-sized). Used to dock the overlay inside the
-    game (below the HUD)."""
+    """Client area of `hwnd` in screen coordinates, or None if not usable."""
     try:
         if win32gui.IsIconic(hwnd):
             return None
         left, top = win32gui.ClientToScreen(hwnd, (0, 0))
-        _l, _t, right, bottom = win32gui.GetClientRect(hwnd)
+        _l, _t, right, bottom = win32gui.GetWindowRect(hwnd)
     except win32gui.error:
         return None
-    if right <= 0 or bottom <= 0:
+    width = right - left
+    height = bottom - top
+    if width <= 0 or height <= 0:
         return None
-    return ClientRect(left=left, top=top, width=right, height=bottom)
+    return ClientRect(left=left, top=top, width=width, height=height)
 
 
 def get_window_rect(hwnd: int) -> ClientRect | None:
-    """Full visible window rectangle (incl. title bar) in screen coordinates, or
-    None if not usable. This is what a window screenshot captures, so the live
-    frames match the fixtures the CV regions are calibrated on — unlike the client
-    area, which omits the title bar and shifts every fractional region. Uses the
-    DWM extended frame bounds (excludes invisible resize borders); falls back to
-    GetWindowRect."""
+    """Full visible window rectangle (incl. title bar) in screen coordinates."""
     try:
         if win32gui.IsIconic(hwnd):
             return None
@@ -184,17 +173,58 @@ def get_window_rect(hwnd: int) -> ClientRect | None:
 
 
 class WindowCapture:
-    """Grabs BGR frames of a screen rectangle. One instance per thread (mss)."""
+    """Grabs BGR frames of a specific window via GDI BitBlt.
 
-    def __init__(self) -> None:
-        self._sct = mss.mss()
+    Purely portable: no WinRT, no MSS, no borders, no cursor flicker.
+    """
 
-    def grab(self, rect: ClientRect) -> np.ndarray:
-        shot = self._sct.grab(
-            {"left": rect.left, "top": rect.top, "width": rect.width, "height": rect.height}
-        )
-        # mss delivers BGRA; drop alpha -> BGR, contiguous for OpenCV
-        return np.ascontiguousarray(np.asarray(shot)[:, :, :3])
+    def __init__(self, game_hwnd: int) -> None:
+        self.hwnd = game_hwnd
+        self._lock = threading.Lock()
+        self._latest_frame: np.ndarray | None = None
+
+    def grab(self, rect: ClientRect) -> np.ndarray | None:
+        """Capture the window area defined by rect and return a BGR frame."""
+        if not is_window_alive(self.hwnd):
+            return None
+
+        left, top, width, height = rect.left, rect.top, rect.width, rect.height
+
+        try:
+            hwnd_dc = win32gui.GetWindowDC(self.hwnd)
+            mfc_dc = win32ui.CreateDCFromHandle(hwnd_dc)
+            save_dc = mfc_dc.CreateCompatibleDC()
+
+            bitmap = win32ui.CreateBitmap()
+            bitmap.CreateCompatibleBitmap(mfc_dc, width, height)
+            save_dc.SelectObject(bitmap)
+
+            # PW_RENDERFULLCONTENT = 2 (captures hardware-accelerated windows on Win 8.1+)
+            import ctypes
+            result = ctypes.windll.user32.PrintWindow(self.hwnd, save_dc.GetSafeHdc(), 2)
+            if not result:
+                raise RuntimeError("PrintWindow failed")
+
+            bmpinfo = bitmap.GetInfo()
+            bmpstr = bitmap.GetBitmapBits(True)
+
+            img = np.frombuffer(bmpstr, dtype=np.uint8)
+            img = img.reshape((bmpinfo["bmHeight"], bmpinfo["bmWidth"], 4))
+            bgr = img[:, :, :3]
+
+            win32gui.DeleteObject(bitmap.GetHandle())
+            save_dc.DeleteDC()
+            mfc_dc.DeleteDC()
+            win32gui.ReleaseDC(self.hwnd, hwnd_dc)
+
+            with self._lock:
+                self._latest_frame = bgr
+
+            return bgr.copy()
+        except Exception as e:
+            logging.getLogger(__name__).warning(f"GDI capture error: {e}")
+            return None
 
     def close(self) -> None:
-        self._sct.close()
+        # Nothing persistent to close for GDI BitBlt
+        pass

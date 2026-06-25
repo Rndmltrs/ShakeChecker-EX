@@ -41,7 +41,6 @@ from ui_overlay import (
     DOCK_TOP_OFFSET,
     MIN_SCALE,
     BaseOverlay,
-    bring_overlay_above_game,
     phys_to_logical,
 )
 
@@ -336,7 +335,6 @@ class BattlePanel(BaseOverlay):
             )
         self._reorder(order, is_empty=is_empty)
         self.show()
-        bring_overlay_above_game(self)
 
     def set_hidden_names(self, names: set[str]) -> None:
         """Choose which balls the overlay shows (by ball NAME). Hidden balls drop

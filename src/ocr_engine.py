@@ -4,15 +4,13 @@ from __future__ import annotations
 
 import csv
 import time
-from datetime import datetime
 from pathlib import Path
-
+import threading
+_ocr_lock = threading.Lock()
 import numpy as np
 
 _ocr_det = None
 _ocr_no_det = None
-
-
 
 
 def _engine_det():
@@ -74,23 +72,30 @@ def sorted_ocr_lines(result) -> list[str]:
 
 def run_ocr(image: np.ndarray, task_name: str = "run_ocr") -> list[str]:
     """OCR an image, returning the detected text lines (empty if none)."""
-    t0 = time.time()
-    result, _ = _engine_det()(image)
-    _log_performance(task_name, time.time() - t0, image.shape)
-    return [text for _box, text, _score in result] if result else []
-
+    with _ocr_lock:
+        t0 = time.time()
+        result, _ = _engine_det()(image)
+        inference_time = time.time() - t0
+        _log_performance(task_name, inference_time, image.shape)
+        return [text for _box, text, _score in result] if result else []
 
 def run_ocr_no_det(image: np.ndarray, task_name: str = "run_ocr_no_det") -> list[str]:
     """OCR an image bypassing the text-detection network. Use only for pre-cropped single lines."""
-    t0 = time.time()
-    result, _ = _engine_no_det()(image)
-    _log_performance(task_name, time.time() - t0, image.shape)
+    with _ocr_lock:
+        t1 = time.time()
+        result, _ = _engine_no_det()(image)
+    inference_time = time.time() - t1
+
+    # Log ONLY the inference time
+    _log_performance(task_name, inference_time, image.shape)
+
     return [text for _box, text, _score in result] if result else []
 
-
 def run_ocr_lines(image: np.ndarray, task_name: str = "run_ocr_lines") -> list[str]:
-    """OCR an image, returning the text lines ordered top-to-bottom by position."""
-    t0 = time.time()
-    result, _ = _engine_det()(image)
-    _log_performance(task_name, time.time() - t0, image.shape)
-    return sorted_ocr_lines(result)
+    with _ocr_lock:
+        t0 = time.time()
+        result, _ = _engine_det()(image)
+        inference_time = time.time() - t0
+        _log_performance(task_name, inference_time, image.shape)
+        return sorted_ocr_lines(result)
+

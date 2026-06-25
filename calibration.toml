@@ -132,9 +132,9 @@ cyan = [85, 99]
 # where the HUD sits higher). Extra captured text (e.g. the title) is harmless --
 # cave-ness is decided by keywords. Verified on Eterna Forest / Victory Road /
 # Route 41 / Floaroma Town fixtures; the " Ch. N" suffix is stripped in code.
-top = 0.0
+top = 0.05
 bottom = 0.065
-left = 0.0
+left = 0.018
 right = 0.18
 upscale = 3
 
@@ -168,11 +168,11 @@ edge_frac_min = 0.004
 # what counts as "compact" (bounding box). Streaky weather makes long thin contours
 # (aspect far from 1) that are excluded by blob_ar_*.
 min_blobs = 1
-blob_min_side_px = 4
-blob_area_min_px = 16
-blob_area_max_px = 1500
-blob_ar_min = 0.4
-blob_ar_max = 2.6
+blob_min_side_px = 2
+blob_area_min_px = 4
+blob_area_max_px = 2000
+blob_ar_min = 0.2
+blob_ar_max = 3.5
 
 [battle_ui]
 # Authoritative "in a battle" signal: the battle screen has a uniform dark

@@ -41,7 +41,6 @@ from battle_logic import (
     apply_chat_turn,
     battle_end_grace,
     debounce_menu,
-    dex_panel_action,
     is_horde_remnant,
     is_in_battle,
 )
@@ -92,8 +91,8 @@ AREA_INDEX_PATH = DATA / "area_index.json"
 USERDATA = paths.userdata_dir()  # per-account caught lists (%APPDATA% when frozen)
 
 WAITING_POLL_S = 2.0
-IDLE_FRAME_S = 0.5  # ~2 fps
-BATTLE_FRAME_S = 0.2  # ~5 fps
+IDLE_FRAME_S = 0.25
+BATTLE_FRAME_S = 0.5 # ~5 fps
 # How long the battle-specific signals (enemy bar + menu/action/catch templates)
 # must ALL be gone before the battle ends. Short when the battle UI panel is
 # already gone (back to the overworld -> clear the catch overlay promptly), but
@@ -123,12 +122,10 @@ BATTLE_START_GRACE_S = 3.0
 # IDLE state location OCR throttle. Location changes are relatively infrequent.
 # A lower interval increases UI responsiveness at the cost of slightly
 # higher CPU usage while walking.
-DEX_LOC_INTERVAL_S = 0.0
-# Don't hide the dex panel on a single failed location read: a garbled OCR or a
-# screen transition briefly makes the HUD unreadable. Keep the last good location
-# up until this many consecutive misses (~DEX_LOC_INTERVAL_S apart) confirm we've
-# genuinely left to an area not in the index.
-DEX_LOC_MISS_HIDE = 3
+DEX_LOC_INTERVAL_S = 0.25
+# How long the HUD location mask must remain perfectly still before OCR is allowed
+# to run. Filters out blur from camera panning and rapid-fire UI transitions.
+LOC_MASK_STABLE_S = 0.125
 DEX_SHOWN_MAX = 5  # entries shown before collapsing the rest into "+X"
 
 log = logging.getLogger("shakechecker")
@@ -391,7 +388,7 @@ class LiveLoop:
         self.name_reader = None if species_override else NameReader(cal.name, SPECIES_PATH)
         self.battle_text = BattleTextReader(cal.battle_text, TEMPLATES_DIR)
         self.chat = AsyncChatReader(cal.chat)  # background turn-OCR (correction only)
-        self.capture = WindowCapture()
+        self.capture: WindowCapture | None = None
         # The main thread runs the UI and frame capture; the slow AI runs here.
         # Scale workers based on hardware to prevent UI lockups on low-end CPUs,
         # while letting high-end rigs chew through OCR tasks instantly.
@@ -404,6 +401,7 @@ class LiveLoop:
         from concurrent.futures import ThreadPoolExecutor
 
         self.pool = ThreadPoolExecutor(max_workers=workers)
+        self.loc_pool = ThreadPoolExecutor(max_workers=1)
 
         self.state = AppState.WAITING
         self.hwnd: int | None = None
@@ -441,7 +439,6 @@ class LiveLoop:
         self._loc_read = False  # location OCR'd this battle yet
         self._loc_ocr_raw = ""  # last raw OCR text (tracks what the screen actually shows)
         self._last_loc_mask: np.ndarray | None = None  # fast visual delta for location OCR
-        self._loc_miss_streak = 0  # frames without location text
         self._loc_future: Future[str] | None = None  # background Location OCR task
         self._name_future: Future[dict[Any, Any] | None] | None = None  # background Name OCR task
         self._bt_future: Future[Any] | None = None
@@ -564,10 +561,17 @@ class LiveLoop:
 
             # 2. Dump Location
             try:
+                import location_reader
                 c_loc = self.cal.location
-                x0, x1 = c_loc.crop_x(w)
-                loc_crop = frame[int(h * c_loc.top) : int(h * c_loc.bottom), x0:x1]
+                loc_crop = frame[int(h * c_loc.top) : int(h * c_loc.bottom), int(w * c_loc.left) : int(w * c_loc.right)]
                 if loc_crop.size > 0:
+                    mask = location_reader.extract_location_mask(frame, c_loc)
+                    if mask is not None:
+                        ys, xs = __import__('numpy').where(mask > 0)
+                        if len(xs) > 0:
+                            x1, x2 = xs.min(), xs.max()
+                            loc_crop = loc_crop[:, x1:x2 + 1]
+
                     scale = 48.0 / loc_crop.shape[0]
                     up = cv2.resize(loc_crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
                     cv2.imwrite(str(debug_dir / f"location_{timestamp}.png"), up)
@@ -611,10 +615,19 @@ class LiveLoop:
             handle = widget.windowHandle()
             if handle:
                 if owner_hwnd == 0:
+                    if hasattr(self, "_owner_windows") and id(widget) in self._owner_windows:
+                        del self._owner_windows[id(widget)]
                     handle.setTransientParent(None)
                 else:
-                    window = QWindow.fromWinId(int(owner_hwnd))  # type: ignore[arg-type]
-                    handle.setTransientParent(window)
+                    if not hasattr(self, "_owner_windows"):
+                        self._owner_windows = {}
+                    
+                    # Keep the wrapper alive in a dict so Python's GC doesn't
+                    # destroy it and silently break the transient-parent link for the FIRST panel
+                    # when the SECOND panel is initialized!
+                    proxy = QWindow.fromWinId(int(owner_hwnd))  # type: ignore[arg-type]
+                    self._owner_windows[id(widget)] = proxy
+                    handle.setTransientParent(proxy)
 
     def _tick(self) -> float:
         # Reset manual override if the app state changes naturally
@@ -635,8 +648,16 @@ class LiveLoop:
                 return WAITING_POLL_S
             log.info("PokeMMO window found")
             self.state = AppState.IDLE
+            self.capture = WindowCapture(self.hwnd)
             self._set_owner(self.battle_panel, self.hwnd)
             self._set_owner(self.dex_panel, self.hwnd)
+
+            # Nudge panels above the game window once at startup
+            from ui_overlay import bring_overlay_above_game
+            if self.battle_panel is not None:
+                bring_overlay_above_game(self.battle_panel)
+            if self.dex_panel is not None:
+                bring_overlay_above_game(self.dex_panel)
 
         assert self.hwnd is not None
         # Capture the FULL window (matches the full-window fixtures the CV regions
@@ -646,16 +667,25 @@ class LiveLoop:
         if win_rect is None or client_rect is None:
             if not is_window_alive(self.hwnd):
                 log.info("window lost, waiting...")
+                if self.hwnd is not None:
+                    self._set_owner(self.battle_panel, 0)
+                    self._set_owner(self.dex_panel, 0)
+                    self.hwnd = None
+                if self.capture is not None:
+                    self.capture.close()
+                    self.capture = None
                 self.state = AppState.WAITING
-                self._set_owner(self.battle_panel, 0)
-                self._set_owner(self.dex_panel, 0)
-                self.hwnd = None
                 self.battle_panel.hide_battle()
                 if self.dex_panel is not None:
                     self.dex_panel.hide_panel()
             return WAITING_POLL_S
 
+        if self.capture is None:
+            return WAITING_POLL_S
+
         frame = self.capture.grab(win_rect)
+        if frame is None:
+            return 0.05
         self._last_frame = frame
         now = time.monotonic()
         # Pass the horde hint so a horde narrowed to ONE bar still reads its status
@@ -784,19 +814,12 @@ class LiveLoop:
                     if m1 is None or m2 is None:
                         return True
 
-                    # Compute absolute difference between masks
                     diff = cv2.absdiff(m1, m2)
+                    changed_pixels = np.count_nonzero(diff)
 
-                    # Instead of erosion (which destroys 1-pixel-thick fonts at low DPI),
-                    # we use a Gaussian blur to find DENSE clusters of differences. Scattered rain
-                    # and 1-pixel edge flickers will blur into very low intensity (< 50).
-                    # A real character changing creates a dense cluster of differences that will
-                    # accumulate into high intensity (> 100) when blurred.
-                    blurred = cv2.GaussianBlur(diff, (5, 5), 0)
-                    _, dense_diff = cv2.threshold(blurred, 100, 255, cv2.THRESH_BINARY)
-
-                    # If any dense clusters survive the threshold, it's a real text change
-                    return bool(np.count_nonzero(dense_diff) > 0)
+                    # Text changes produce ~100–300 changed pixels
+                    # Noise produces <20
+                    return changed_pixels > 50
 
                 if _mask_changed(mask, getattr(self, "_last_seen_mask", None)):
                     self._last_seen_mask = mask
@@ -806,18 +829,21 @@ class LiveLoop:
 
                 if not changed:
                     self._mask_changed_since = None
+                    # Clear queued OCR work when nothing is changing
+                    self._queued_loc_frame = None
+                    self._queued_loc_mask = None
                 elif getattr(self, "_mask_changed_since", None) is None:
                     self._mask_changed_since = now
 
-                # Wait for the mask to be perfectly still for 0.4s (animation finished)
+                # Wait for the mask to be perfectly still for LOC_MASK_STABLE_S (animation finished)
                 # to guarantee we only pass sharp images to the OCR engine.
-                is_stable = now - getattr(self, "_mask_stable_since", now) >= 0.4
+                is_stable = now - getattr(self, "_mask_stable_since", now) >= LOC_MASK_STABLE_S
 
                 # Only read when the mask is perfectly stable (camera stopped panning).
                 # Removing the 1.0s override completely stops it from triggering while running.
-                ready = is_stable
+                ready = is_stable and changed
 
-                if changed and ready and dex_due:
+                if ready and dex_due:
                     # If the banner slid away or is completely empty, don't waste 4.5s running OCR.
                     # This prevents queue jamming, ensuring the thread is free for the next route.
                     if np.count_nonzero(mask) < (mask.size * 0.005):
@@ -847,18 +873,22 @@ class LiveLoop:
                                 client_rect.left, client_rect.top, client_rect.width
                             )
 
-                        self._loc_future = self.pool.submit(
+                        trigger_latency = now - getattr(self, "_last_loc_trigger", now)
+                        from ocr_engine import _log_performance
+                        _log_performance("location_trigger_latency", trigger_latency, (0,0))
+                        self._last_loc_trigger = now
+
+                        self._loc_future = self.loc_pool.submit(
                             location_reader.read_location, frame.copy(), self.cal.location
                         )
                         self._pending_loc_mask = mask.copy()
                         if self.dex_panel is not None:
                             self.dex_panel.set_loading(True)
                     else:
-                        # OCR is currently busy processing the previous location, but a NEW location
-                        # banner has appeared and stabilized! Take a snapshot of it right now before
-                        # it vanishes, so we can process it the millisecond the thread frees up.
-                        self._queued_loc_frame = frame.copy()
-                        self._queued_loc_mask = mask.copy()
+                        # Do NOT queue multiple OCR tasks. If one is already queued, ignore new ones.
+                        if getattr(self, "_queued_loc_frame", None) is None:
+                            self._queued_loc_frame = frame.copy()
+                            self._queued_loc_mask = mask.copy()
                         # Update baseline so we don't keep queuing the same frame
                         self._last_loc_mask = mask
 
@@ -882,16 +912,18 @@ class LiveLoop:
                     queued_frame = getattr(self, "_queued_loc_frame", None)
                     queued_mask = getattr(self, "_queued_loc_mask", None)
                     if queued_frame is not None and queued_mask is not None:
-                        import location_reader
+                        if now - self._last_loc_check >= DEX_LOC_INTERVAL_S:
+                            import location_reader
 
-                        self._loc_future = self.pool.submit(
-                            location_reader.read_location, queued_frame, self.cal.location
-                        )
-                        self._pending_loc_mask = queued_mask
-                        self._queued_loc_frame = None
-                        self._queued_loc_mask = None
-                        if self.dex_panel is not None:
-                            self.dex_panel.set_loading(True)
+                            self._loc_future = self.loc_pool.submit(
+                                location_reader.read_location, queued_frame, self.cal.location
+                            )
+
+                            self._pending_loc_mask = queued_mask
+                            self._queued_loc_frame = None
+                            self._queued_loc_mask = None
+                            if self.dex_panel is not None:
+                                self.dex_panel.set_loading(True)
                     elif self.dex_panel is not None:
                         self.dex_panel.set_loading(False)
 
@@ -902,31 +934,25 @@ class LiveLoop:
                 ):
                     view = self._update_dex(self._loc_ocr_raw)
 
-                    if not self._last_hud and getattr(self, "_loc_future", None) is not None:
-                        # We are displaying the dummy view waiting for the very first location read;
-                        # don't hide it, and force the loading spinner to animate.
-                        # (since view is None and show_here isn't being called every frame yet).
-                        action = "keep"
+                    # Spinner logic: only show spinner while an OCR job is actually running
+                    if getattr(self, "_loc_future", None) is not None:
                         if self.dex_panel is not None:
                             self.dex_panel.set_loading(True)
                     else:
-                        action, self._loc_miss_streak = dex_panel_action(
-                            view is not None, self._loc_miss_streak, hide_after=DEX_LOC_MISS_HIDE
-                        )
+                        # No OCR running → spinner OFF
+                        if self.dex_panel is not None:
+                            self.dex_panel.set_loading(False)
 
-                    if self.dex_panel is not None:
-                        if view is not None:  # matched -> show (action == "show")
-                            self.dex_panel.apply_scale(
-                                self.settings.dex_scale or scale_for_window(client_rect.height)
-                            )
-                            if self.mode_override != "battle":
-                                self.dex_panel.show_here(view)
-                            self.dex_panel.dock_to(
-                                client_rect.left, client_rect.top, client_rect.width
-                            )
-                        elif action == "hide":  # several misses in a row -> truly left the area
-                            self.dex_panel.hide_panel()
-                        # "keep": a transient miss -> leave the last good panel on screen
+                    # Always show immediately when we have a view
+                    if self.dex_panel is not None and view is not None:
+                        self.dex_panel.apply_scale(
+                            self.settings.dex_scale or scale_for_window(client_rect.height)
+                        )
+                        if self.mode_override != "battle":
+                            self.dex_panel.show_here(view)
+                        self.dex_panel.dock_to(
+                            client_rect.left, client_rect.top, client_rect.width
+                        )
 
         # Apply manual mode override UI forcing
         if self.mode_override == "dex":
@@ -981,6 +1007,12 @@ class LiveLoop:
             self.dex_panel.move(*bp_pos)
 
         return self._frame_interval()
+
+    def _cleanup(self) -> None:
+        if self.capture is not None:
+            self.capture.close()
+        self.pool.shutdown(wait=False)
+        self.loc_pool.shutdown(wait=False)
 
     def _enter_battle(self) -> None:
         self.state = AppState.BATTLE

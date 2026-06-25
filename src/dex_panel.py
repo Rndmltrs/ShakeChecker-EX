@@ -47,7 +47,6 @@ from ui_overlay import (
     DOCK_SIDE,
     DOCK_TOP_OFFSET,
     BaseOverlay,
-    bring_overlay_above_game,
     phys_to_logical,
 )
 
@@ -266,7 +265,6 @@ class DexPanel(BaseOverlay):
         if self._manual_height is None:
             self.adjustSize()
         self.show()
-        bring_overlay_above_game(self)
 
     def set_loading(self, is_loading: bool) -> None:
         """Show a small spinner next to the title while OCR is running."""

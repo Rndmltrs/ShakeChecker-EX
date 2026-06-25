@@ -277,7 +277,9 @@ class SettingsPanel:
         dump_btn.setFont(self._font(12, bold=True))
         dump_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         dump_btn.setObjectName("LeftAlignBtnSecondary")
-        dump_btn.setToolTip("Save all currently processed OCR crops to disk for debugging false positives.")
+        dump_btn.setToolTip(
+            "Save all currently processed OCR crops to disk for debugging false positives."
+        )
         dump_btn.clicked.connect(self._handle_dump_debug)
         box.addWidget(dump_btn)
 
