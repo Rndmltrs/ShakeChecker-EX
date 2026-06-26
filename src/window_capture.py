@@ -7,15 +7,15 @@ input, never touches the game process.
 from __future__ import annotations
 
 import ctypes
+import logging
+import threading
 from ctypes import wintypes
 from dataclasses import dataclass
 
 import numpy as np
+import win32con
 import win32gui
 import win32ui
-import win32con
-import threading
-import logging
 
 WINDOW_TITLE = "PokeMMO"
 
@@ -135,18 +135,24 @@ def is_window_alive(hwnd: int) -> bool:
 
 
 def get_client_rect(hwnd: int) -> ClientRect | None:
-    """Client area of `hwnd` in screen coordinates, or None if not usable."""
     try:
         if win32gui.IsIconic(hwnd):
             return None
+
+        # client top-left in screen coords
         left, top = win32gui.ClientToScreen(hwnd, (0, 0))
-        _l, _t, right, bottom = win32gui.GetWindowRect(hwnd)
+
+        # client size in client coords
+        c_left, c_top, c_right, c_bottom = win32gui.GetClientRect(hwnd)
     except win32gui.error:
         return None
-    width = right - left
-    height = bottom - top
+
+    width = c_right - c_left
+    height = c_bottom - c_top
+
     if width <= 0 or height <= 0:
         return None
+
     return ClientRect(left=left, top=top, width=width, height=height)
 
 
@@ -191,20 +197,24 @@ class WindowCapture:
         left, top, width, height = rect.left, rect.top, rect.width, rect.height
 
         try:
-            hwnd_dc = win32gui.GetWindowDC(self.hwnd)
-            mfc_dc = win32ui.CreateDCFromHandle(hwnd_dc)
+            # Capture directly from the desktop screen surface. This perfectly bypasses
+            # DWM invisible borders, GetWindowDC DPI bugs, and negative coordinate
+            # wrap-arounds on multi-monitor setups.
+            desktop_dc = win32gui.GetDC(0)
+            mfc_dc = win32ui.CreateDCFromHandle(desktop_dc)
             save_dc = mfc_dc.CreateCompatibleDC()
 
             bitmap = win32ui.CreateBitmap()
             bitmap.CreateCompatibleBitmap(mfc_dc, width, height)
             save_dc.SelectObject(bitmap)
 
-            # PW_RENDERFULLCONTENT = 2 (captures hardware-accelerated windows on Win 8.1+)
-            import ctypes
-            result = ctypes.windll.user32.PrintWindow(self.hwnd, save_dc.GetSafeHdc(), 2)
-            if not result:
-                raise RuntimeError("PrintWindow failed")
-
+            save_dc.BitBlt(
+                (0, 0),
+                (width, height),
+                mfc_dc,
+                (left, top),  # Direct absolute screen coordinates
+                win32con.SRCCOPY,
+            )
             bmpinfo = bitmap.GetInfo()
             bmpstr = bitmap.GetBitmapBits(True)
 
@@ -215,10 +225,12 @@ class WindowCapture:
             win32gui.DeleteObject(bitmap.GetHandle())
             save_dc.DeleteDC()
             mfc_dc.DeleteDC()
-            win32gui.ReleaseDC(self.hwnd, hwnd_dc)
 
             with self._lock:
                 self._latest_frame = bgr
+
+            # Explicitly release the desktop DC to prevent GDI leaks
+            win32gui.ReleaseDC(0, desktop_dc)
 
             return bgr.copy()
         except Exception as e:

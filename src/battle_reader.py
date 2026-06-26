@@ -453,8 +453,10 @@ def read_enemy_bars(
     from the bars' horizontal spread."""
     c = cal.hp_bar
     h, w = frame_bgr.shape[:2]
-    y0, y1 = int(h * c.search_top), int(h * c.search_bottom)
-    x0, x1 = int(w * c.search_left), int(w * c.search_right)
+    y0 = int(c.search_top) if c.search_top > 1.0 else int(h * c.search_top)
+    y1 = int(c.search_bottom) if c.search_bottom > 1.0 else int(h * c.search_bottom)
+    x0 = int(c.search_left) if c.search_left > 1.0 else int(w * c.search_left)
+    x1 = int(c.search_right) if c.search_right > 1.0 else int(w * c.search_right)
     roi = frame_bgr[y0:y1, x0:x1]
     hsv_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
     # Convert only the top search band to HSV, not the whole frame: every consumer
@@ -538,7 +540,11 @@ def is_battle_ui_present(frame_bgr: np.ndarray, cal: BattleUiCalibration) -> boo
     This is the authoritative in-battle signal: it stays present through the
     intro banner and attack animations, unlike the enemy HP bar."""
     h, w = frame_bgr.shape[:2]
-    band = frame_bgr[int(h * cal.top) : int(h * cal.bottom), int(w * cal.left) : int(w * cal.right)]
+    y1 = int(cal.top) if cal.top > 1.0 else int(h * cal.top)
+    y2 = int(cal.bottom) if cal.bottom > 1.0 else int(h * cal.bottom)
+    x1 = int(cal.left) if cal.left > 1.0 else int(w * cal.left)
+    x2 = int(cal.right) if cal.right > 1.0 else int(w * cal.right)
+    band = frame_bgr[y1:y2, x1:x2]
     if band.size == 0:
         return False
     gray = cv2.cvtColor(band, cv2.COLOR_BGR2GRAY)
@@ -646,7 +652,11 @@ class BattleTextReader:
     def read(self, frame_bgr: np.ndarray) -> BattleText:
         c = self._cal
         h, w = frame_bgr.shape[:2]
-        band = frame_bgr[int(h * c.top) : int(h * c.bottom), int(w * c.left) : int(w * c.right)]
+        y1 = int(c.top) if c.top > 1.0 else int(h * c.top)
+        y2 = int(c.bottom) if c.bottom > 1.0 else int(h * c.bottom)
+        x1 = int(c.left) if c.left > 1.0 else int(w * c.left)
+        x2 = int(c.right) if c.right > 1.0 else int(w * c.right)
+        band = frame_bgr[y1:y2, x1:x2]
         if band.size == 0:
             return BattleText(menu_present=False, caught=False, action=False)
         gray = cv2.cvtColor(band, cv2.COLOR_BGR2GRAY)

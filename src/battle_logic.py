@@ -68,6 +68,27 @@ def battle_end_grace(
         return anim_s
     return normal_s
 
+
+def debounce_battle(
+    in_battle_now: bool,
+    counter: int,
+    *,
+    enter_threshold: int = 2,
+    clamp_max: int = 5,
+) -> tuple[bool, int]:
+    """Pure frame-counter debounce for the battle membership signal.
+
+    Increments `counter` on a positive signal, decrements on absence (floor 0).
+    Returns ``(stable_in_battle, new_counter)``. Enter requires `enter_threshold`
+    consecutive positive frames; exit resets immediately when the counter reaches 0.
+    The caller (LiveLoop) holds the counter on the instance; this function is
+    stateless and mirrors the ``debounce_menu`` pattern."""
+    counter = counter + 1 if in_battle_now else counter - 1
+    counter = max(0, min(counter, clamp_max))
+    stable = counter >= enter_threshold
+    return stable, counter
+
+
 def apply_chat_turn(
     tracker: TurnTracker,
     chat_turn: int | None,

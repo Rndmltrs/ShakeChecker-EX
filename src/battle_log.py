@@ -47,7 +47,9 @@ def read_turn_number(frame_bgr: np.ndarray, cal: ChatCalibration) -> int | None:
     """Current turn number (1-based) from the chat, or None if not readable."""
     h, w = frame_bgr.shape[:2]
     x0, x1 = cal.crop_x(w)
-    crop = frame_bgr[int(h * cal.top) : int(h * cal.bottom), x0:x1]
+    y0 = int(cal.top) if cal.top > 1.0 else int(h * cal.top)
+    y1 = int(cal.bottom) if cal.bottom > 1.0 else int(h * cal.bottom)
+    crop = frame_bgr[y0:y1, x0:x1]
     if crop.size == 0:
         return None
     up = cv2.resize(crop, None, fx=cal.upscale, fy=cal.upscale, interpolation=cv2.INTER_CUBIC)
@@ -79,9 +81,9 @@ class AsyncChatReader:
         c = self._cal
         h, w = frame_bgr.shape[:2]
         x0, x1 = c.crop_x(w)
-        crop = frame_bgr[
-            int(h * c.top) : int(h * c.bottom), x0:x1
-        ].copy()  # copy: the worker reads it after this frame is gone
+        y0 = int(c.top) if c.top > 1.0 else int(h * c.top)
+        y1 = int(c.bottom) if c.bottom > 1.0 else int(h * c.bottom)
+        crop = frame_bgr[y0:y1, x0:x1].copy()  # copy: the worker reads it after this frame is gone
         self._future = self._pool.submit(self._read, crop)
 
     def poll(self) -> int | None:

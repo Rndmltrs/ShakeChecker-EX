@@ -34,15 +34,9 @@ Thumbs.db
 Desktop.ini
 
 # Local artifacts
+logs/
 *.log
 fixtures/_debug_crops/
 
 # Per-account user data (caught lists, active-account config) -- local only
 userdata/
-
-# Governance and AI files
-hidden/
-
-# Local custom Launcher
-launcher.ps1
-.launcher_history.txt

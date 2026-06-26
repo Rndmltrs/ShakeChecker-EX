@@ -32,7 +32,7 @@ import win32event
 import winerror
 from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QAction, QIcon
-from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
+from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon, QWidget
 
 import paths
 from account_store import AccountConfig, CaughtStore, delete_account_data
@@ -40,6 +40,7 @@ from battle_log import AsyncChatReader, read_turn_number
 from battle_logic import (
     apply_chat_turn,
     battle_end_grace,
+    debounce_battle,
     debounce_menu,
     is_horde_remnant,
     is_in_battle,
@@ -92,7 +93,7 @@ USERDATA = paths.userdata_dir()  # per-account caught lists (%APPDATA% when froz
 
 WAITING_POLL_S = 2.0
 IDLE_FRAME_S = 0.25
-BATTLE_FRAME_S = 0.5 # ~5 fps
+BATTLE_FRAME_S = 0.5  # ~5 fps
 # How long the battle-specific signals (enemy bar + menu/action/catch templates)
 # must ALL be gone before the battle ends. Short when the battle UI panel is
 # already gone (back to the overworld -> clear the catch overlay promptly), but
@@ -449,6 +450,8 @@ class LiveLoop:
         self._trainer_decided = False  # trainer vs wild settled this battle
         self._ot_checked = False  # enemy's OT-caught icon checked this battle
         self._was_horde = False  # read_battle horde hint (read every tick, so init here)
+        self._battle_debounce: int = 0  # frame counter for debounce_battle
+        self._stable_in_battle: bool = False  # debounced battle membership
         self._last_loc_check = 0.0  # last IDLE location OCR (throttle)
         self._dex_log = ""  # last printed dex panel text (console dedup)
 
@@ -546,65 +549,289 @@ class LiveLoop:
             self.dex_panel._hide_popups()
 
     def _trigger_debug_dump(self) -> None:
-        import cv2
-        from pathlib import Path
         from datetime import datetime
-        if getattr(self, "_last_frame", None) is not None:
-            debug_dir = Path("debug")
-            debug_dir.mkdir(exist_ok=True)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:19]
-            frame = self._last_frame
-            h, w = frame.shape[:2]
+        from pathlib import Path
 
-            # 1. Dump full frame
-            cv2.imwrite(str(debug_dir / f"full_frame_{timestamp}.png"), frame)
+        import cv2
 
-            # 2. Dump Location
-            try:
-                import location_reader
-                c_loc = self.cal.location
-                loc_crop = frame[int(h * c_loc.top) : int(h * c_loc.bottom), int(w * c_loc.left) : int(w * c_loc.right)]
-                if loc_crop.size > 0:
-                    mask = location_reader.extract_location_mask(frame, c_loc)
-                    if mask is not None:
-                        ys, xs = __import__('numpy').where(mask > 0)
-                        if len(xs) > 0:
-                            x1, x2 = xs.min(), xs.max()
-                            loc_crop = loc_crop[:, x1:x2 + 1]
+        if getattr(self, "_last_frame", None) is None:
+            return
 
-                    scale = 48.0 / loc_crop.shape[0]
-                    up = cv2.resize(loc_crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
-                    cv2.imwrite(str(debug_dir / f"location_{timestamp}.png"), up)
-            except Exception as e:
-                log.warning("Failed to dump location: %s", e)
+        debug_dir = Path("logs") / "debug"
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:19]
+        frame = self._last_frame  # keep original untouched – used for slice exports
+        annotated = frame.copy()  # draw all boxes/legend on this copy only
+        h, w = frame.shape[:2]
 
-            # 3. Dump Chat
-            try:
-                c_chat = self.cal.chat
-                x0, x1 = c_chat.crop_x(w)
-                chat_crop = frame[int(h * c_chat.top) : int(h * c_chat.bottom), x0:x1]
-                if chat_crop.size > 0:
-                    up = cv2.resize(chat_crop, None, fx=c_chat.upscale, fy=c_chat.upscale, interpolation=cv2.INTER_CUBIC)
-                    cv2.imwrite(str(debug_dir / f"chat_{timestamp}.png"), up)
-            except Exception as e:
-                log.warning("Failed to dump chat: %s", e)
+        reading = getattr(self, "_last_reading", None)
 
-            # 4. Dump Name (if in battle)
-            if getattr(self, "_last_reading", None) is not None and self._last_reading.bars:
-                try:
-                    bar = self._last_reading.bars[0]
-                    c_name = self.cal.name
-                    y0, y1 = bar.y + c_name.dy0, bar.y + c_name.dy1
-                    x0, x1 = bar.x + c_name.dx0, bar.x + c_name.dx1
-                    if 0 <= y0 < y1 <= h and 0 <= x0 < x1 <= w:
-                        name_crop = frame[y0:y1, x0:x1]
-                        if name_crop.size > 0:
-                            up = cv2.resize(name_crop, None, fx=c_name.upscale, fy=c_name.upscale, interpolation=cv2.INTER_CUBIC)
-                            cv2.imwrite(str(debug_dir / f"name_{timestamp}.png"), up)
-                except Exception as e:
-                    log.warning("Failed to dump name: %s", e)
-            
-            log.info("Successfully dumped all debug crops to 'debug/' folder!")
+        # ---------------------------------------------------------
+        # 1. HP BAR + CAUGHT ICON + NAME + TRAINER STRIP
+        # ---------------------------------------------------------
+        if reading and reading.bars:
+            bar = reading.bars[0]
+
+            # HP bar fill start
+            cv2.circle(annotated, (bar.x, bar.y), 4, (0, 255, 0), -1)
+
+            # HP bar rectangle (green)
+            BAR_HEIGHT = 10
+            BAR_WIDTH = 218
+            cv2.rectangle(
+                annotated,
+                (bar.x, bar.y - BAR_HEIGHT // 2),
+                (bar.x + BAR_WIDTH, bar.y + BAR_HEIGHT // 2),
+                (0, 255, 0),
+                2,
+            )
+
+            # Caught icon (red)
+            c_ci = self.cal.caught_icon
+            cv2.rectangle(
+                annotated,
+                (bar.x + c_ci.dx0, bar.y + c_ci.dy0),
+                (bar.x + c_ci.dx1, bar.y + c_ci.dy1),
+                (0, 0, 255),
+                2,
+            )
+
+            # Name OCR region (yellow)
+            c_name = self.cal.name
+            ny0, ny1 = bar.y + c_name.dy0, bar.y + c_name.dy1
+            nx0, nx1 = bar.x + c_name.dx0, bar.x + c_name.dx1
+            if 0 <= ny0 < ny1 <= h and 0 <= nx0 < nx1 <= w:
+                cv2.rectangle(annotated, (nx0, ny0), (nx1, ny1), (0, 255, 255), 2)
+
+            # Trainer strip region (white)
+            c_tr = self.cal.trainer
+            ty0 = bar.y + c_tr.dy0
+            ty1 = bar.y + c_tr.dy1
+            tx0 = bar.x
+            tx1 = bar.x + c_tr.width_px
+            if 0 <= ty0 < ty1 <= h and 0 <= tx0 < tx1 <= w:
+                cv2.rectangle(annotated, (tx0, ty0), (tx1, ty1), (255, 255, 255), 2)
+
+            # Status badge region (chartreuse)
+            c_st = self.cal.status
+            st_y0 = bar.y + c_st.dy0
+            st_y1 = bar.y + c_st.dy1
+            st_x0 = bar.x + c_st.dx0
+            st_x1 = bar.x + c_st.dx1
+            if 0 <= st_y0 < st_y1 <= h and 0 <= st_x0 < st_x1 <= w:
+                cv2.rectangle(annotated, (st_x0, st_y0), (st_x1, st_y1), (0, 255, 128), 2)
+
+        # ---------------------------------------------------------
+        # 2. HP BAR SEARCH REGION (blue)
+        # ---------------------------------------------------------
+        c_hp = self.cal.hp_bar
+        sy0 = int(c_hp.search_top) if c_hp.search_top > 1.0 else int(h * c_hp.search_top)
+        sy1 = int(c_hp.search_bottom) if c_hp.search_bottom > 1.0 else int(h * c_hp.search_bottom)
+        sx0 = int(c_hp.search_left) if c_hp.search_left > 1.0 else int(w * c_hp.search_left)
+        sx1 = int(c_hp.search_right) if c_hp.search_right > 1.0 else int(w * c_hp.search_right)
+        cv2.rectangle(annotated, (sx0, sy0), (sx1, sy1), (255, 0, 0), 2)
+
+        # ---------------------------------------------------------
+        # 3. CHAT OCR REGION (cyan)
+        # ---------------------------------------------------------
+        c_chat = self.cal.chat
+        cx0, cx1 = c_chat.crop_x(w)
+        cy0 = int(c_chat.top) if c_chat.top > 1.0 else int(h * c_chat.top)
+        cy1 = int(c_chat.bottom) if c_chat.bottom > 1.0 else int(h * c_chat.bottom)
+        if 0 <= cy0 < cy1 <= h and 0 <= cx0 < cx1 <= w:
+            cv2.rectangle(annotated, (cx0, cy0), (cx1, cy1), (255, 255, 0), 2)
+
+        # ---------------------------------------------------------
+        # 4. LOCATION REGION (purple)
+        # ---------------------------------------------------------
+        c_loc = self.cal.location
+        ly0 = int(c_loc.top) if c_loc.top > 1.0 else int(h * c_loc.top)
+        ly1 = int(c_loc.bottom) if c_loc.bottom > 1.0 else int(h * c_loc.bottom)
+        lx0 = int(c_loc.left) if c_loc.left > 1.0 else int(w * c_loc.left)
+        lx1 = int(c_loc.right) if c_loc.right > 1.0 else int(w * c_loc.right)
+        cv2.rectangle(annotated, (lx0, ly0), (lx1, ly1), (255, 0, 255), 2)
+
+        # ---------------------------------------------------------
+        # 5. BATTLE UI REGION (orange)
+        # ---------------------------------------------------------
+        c_ui = self.cal.battle_ui
+        uy0 = int(c_ui.top) if c_ui.top > 1.0 else int(h * c_ui.top)
+        uy1 = int(c_ui.bottom) if c_ui.bottom > 1.0 else int(h * c_ui.bottom)
+        ux0 = int(c_ui.left) if c_ui.left > 1.0 else int(w * c_ui.left)
+        ux1 = int(c_ui.right) if c_ui.right > 1.0 else int(w * c_ui.right)
+        cv2.rectangle(annotated, (ux0, uy0), (ux1, uy1), (0, 165, 255), 2)
+
+        # ---------------------------------------------------------
+        # 6. BATTLE TEXT REGION (pink)
+        # ---------------------------------------------------------
+        c_bt = self.cal.battle_text
+        by0 = int(c_bt.top) if c_bt.top > 1.0 else int(h * c_bt.top)
+        by1 = int(c_bt.bottom) if c_bt.bottom > 1.0 else int(h * c_bt.bottom)
+        bx0 = int(c_bt.left) if c_bt.left > 1.0 else int(w * c_bt.left)
+        bx1 = int(c_bt.right) if c_bt.right > 1.0 else int(w * c_bt.right)
+        cv2.rectangle(annotated, (bx0, by0), (bx1, by1), (255, 105, 180), 2)
+
+        # ---------------------------------------------------------
+        # 7. LEGEND (bottom-right)
+        # ---------------------------------------------------------
+        legend = [
+            ("HP Bar (detected)", (0, 255, 0)),
+            ("Caught Icon Region", (0, 0, 255)),
+            ("HP Bar Search", (255, 0, 0)),
+            ("Name OCR Region", (0, 255, 255)),
+            ("Chat OCR Region", (255, 255, 0)),
+            ("Location Region", (255, 0, 255)),
+            ("Battle UI Region", (0, 165, 255)),
+            ("Battle Text Region", (255, 105, 180)),
+            ("Trainer Strip Region", (255, 255, 255)),
+            ("Status Badge Region", (0, 255, 128)),
+        ]
+
+        font = cv2.FONT_HERSHEY_DUPLEX
+        scale = 0.7
+        thickness = 2
+        line_height = 28
+
+        y = h - (line_height * len(legend)) - 20
+
+        for text, color in legend:
+            text_width = cv2.getTextSize(text, font, scale, thickness)[0][0]
+            x = w - text_width - 20
+            cv2.putText(annotated, text, (x, y), font, scale, color, thickness, cv2.LINE_AA)
+            y += line_height
+
+        # ---------------------------------------------------------
+        # 8. SAVE FULL FRAME (annotated copy)
+        # ---------------------------------------------------------
+        cv2.imwrite(str(debug_dir / f"full_frame_{timestamp}.png"), annotated)
+
+        # ---------------------------------------------------------
+        # 9. DUMP CROPS
+        # ---------------------------------------------------------
+
+        # Location
+        try:
+            import location_reader
+
+            loc_raw = frame[ly0:ly1, lx0:lx1]
+            if loc_raw.size > 0:
+                cv2.imwrite(str(debug_dir / f"location_raw_{timestamp}.png"), loc_raw)
+
+                loc_crop = loc_raw.copy()
+                mask = location_reader.extract_location_mask(frame, self.cal.location)
+                if mask is not None:
+                    ys, xs = __import__("numpy").where(mask > 0)
+                    if len(xs) > 0:
+                        x1m, x2m = xs.min(), xs.max()
+                        loc_crop = loc_crop[:, x1m : x2m + 1]
+
+                scale_loc = 48.0 / max(1, loc_crop.shape[0])
+                up_loc = cv2.resize(
+                    loc_crop, None, fx=scale_loc, fy=scale_loc, interpolation=cv2.INTER_CUBIC
+                )
+                cv2.imwrite(str(debug_dir / f"location_mod_{timestamp}.png"), up_loc)
+        except Exception as e:
+            log.warning("Failed to dump location: %s", e)
+
+        # Chat
+        try:
+            chat_crop = frame[cy0:cy1, cx0:cx1]
+            if chat_crop.size > 0:
+                up_chat = cv2.resize(
+                    chat_crop,
+                    None,
+                    fx=c_chat.upscale,
+                    fy=c_chat.upscale,
+                    interpolation=cv2.INTER_CUBIC,
+                )
+                cv2.imwrite(str(debug_dir / f"chat_{timestamp}.png"), up_chat)
+        except Exception as e:
+            log.warning("Failed to dump chat: %s", e)
+
+        # Name
+        try:
+            if reading and reading.bars:
+                bar = reading.bars[0]
+                c_name = self.cal.name
+                y0n, y1n = bar.y + c_name.dy0, bar.y + c_name.dy1
+                x0n, x1n = bar.x + c_name.dx0, bar.x + c_name.dx1
+                if 0 <= y0n < y1n <= h and 0 <= x0n < x1n <= w:
+                    name_crop = frame[y0n:y1n, x0n:x1n]
+                    if name_crop.size > 0:
+                        up_name = cv2.resize(
+                            name_crop,
+                            None,
+                            fx=c_name.upscale,
+                            fy=c_name.upscale,
+                            interpolation=cv2.INTER_CUBIC,
+                        )
+                        cv2.imwrite(str(debug_dir / f"name_{timestamp}.png"), up_name)
+        except Exception as e:
+            log.warning("Failed to dump name: %s", e)
+
+        # HP bar search crop
+        try:
+            crop_hp = frame[sy0:sy1, sx0:sx1]
+            if crop_hp.size > 0:
+                cv2.imwrite(str(debug_dir / f"hp_bar_search_{timestamp}.png"), crop_hp)
+        except Exception as e:
+            log.warning("Failed to dump hp_bar_search: %s", e)
+
+        # Battle UI
+        try:
+            crop_ui = frame[uy0:uy1, ux0:ux1]
+            if crop_ui.size > 0:
+                cv2.imwrite(str(debug_dir / f"battle_ui_{timestamp}.png"), crop_ui)
+        except Exception as e:
+            log.warning("Failed to dump battle_ui: %s", e)
+
+        # Caught icon
+        try:
+            if reading and reading.bars:
+                bar = reading.bars[0]
+                c_ci = self.cal.caught_icon
+                y0c = bar.y + c_ci.dy0
+                y1c = bar.y + c_ci.dy1
+                x0c = bar.x + c_ci.dx0
+                x1c = bar.x + c_ci.dx1
+                if 0 <= y0c < y1c <= h and 0 <= x0c < x1c <= w:
+                    crop_ci = frame[y0c:y1c, x0c:x1c]
+                    if crop_ci.size > 0:
+                        cv2.imwrite(str(debug_dir / f"caught_icon_{timestamp}.png"), crop_ci)
+        except Exception as e:
+            log.warning("Failed to dump caught_icon: %s", e)
+
+        # Battle text
+        try:
+            crop_bt = frame[by0:by1, bx0:bx1]
+            if crop_bt.size > 0:
+                cv2.imwrite(str(debug_dir / f"battle_text_{timestamp}.png"), crop_bt)
+        except Exception as e:
+            log.warning("Failed to dump battle_text: %s", e)
+
+        # Trainer strip
+        try:
+            if reading and reading.bars:
+                bar = reading.bars[0]
+                c_tr = self.cal.trainer
+                ty0 = bar.y + c_tr.dy0
+                ty1 = bar.y + c_tr.dy1
+                tx0 = bar.x
+                tx1 = bar.x + c_tr.width_px
+                if 0 <= ty0 < ty1 <= h and 0 <= tx0 < tx1 <= w:
+                    crop_tr = frame[ty0:ty1, tx0:tx1]
+                    if crop_tr.size > 0:
+                        cv2.imwrite(str(debug_dir / f"trainer_strip_{timestamp}.png"), crop_tr)
+        except Exception as e:
+            log.warning("Failed to dump trainer_strip: %s", e)
+
+        if reading and reading.bars:
+            log.info("Debug dump saved to '/logs/debug/' folder.")
+        else:
+            log.info(
+                "Debug dump saved to '/logs/debug/' folder "
+                "(partial – no battle data, bar-relative slices skipped)."
+            )
 
     def _set_owner(self, widget: QWidget | None, owner_hwnd: int) -> None:
         if widget is not None:
@@ -613,18 +840,20 @@ class LiveLoop:
             # Force Qt to create the native window handle even if the widget hasn't been shown yet
             widget.winId()
             handle = widget.windowHandle()
+
             if handle:
                 if owner_hwnd == 0:
+                    # Remove transient parent and cleanup tracking dict
                     if hasattr(self, "_owner_windows") and id(widget) in self._owner_windows:
                         del self._owner_windows[id(widget)]
                     handle.setTransientParent(None)
+
                 else:
+                    # Ensure the tracking dict exists with a proper type annotation
                     if not hasattr(self, "_owner_windows"):
-                        self._owner_windows = {}
-                    
-                    # Keep the wrapper alive in a dict so Python's GC doesn't
-                    # destroy it and silently break the transient-parent link for the FIRST panel
-                    # when the SECOND panel is initialized!
+                        self._owner_windows: dict[int, QWindow | None] = {}
+
+                    # Keep the wrapper alive so GC doesn't break the transient-parent link
                     proxy = QWindow.fromWinId(int(owner_hwnd))  # type: ignore[arg-type]
                     self._owner_windows[id(widget)] = proxy
                     handle.setTransientParent(proxy)
@@ -654,6 +883,7 @@ class LiveLoop:
 
             # Nudge panels above the game window once at startup
             from ui_overlay import bring_overlay_above_game
+
             if self.battle_panel is not None:
                 bring_overlay_above_game(self.battle_panel)
             if self.dex_panel is not None:
@@ -683,7 +913,7 @@ class LiveLoop:
         if self.capture is None:
             return WAITING_POLL_S
 
-        frame = self.capture.grab(win_rect)
+        frame = self.capture.grab(client_rect)
         if frame is None:
             return 0.05
         self._last_frame = frame
@@ -705,7 +935,6 @@ class LiveLoop:
         # Submit new tasks if the pool slot is free
         if self._bt_future is None:
             self._bt_future = self.pool.submit(self.battle_text.read, frame.copy())
-
         # In Dex mode, we skip heavy HP bar tracking IF we already know the enemy (cached).
         # We always track it in Battle mode, or if we haven't identified the enemy yet.
         needs_reading = (self.mode_override != "dex") or (
@@ -725,7 +954,6 @@ class LiveLoop:
             return self._frame_interval()
 
         ui_present = is_battle_ui_present(frame, self.cal.battle_ui)
-
         if needs_reading and reading is not None:
             if reading.is_horde:
                 self._was_horde = True
@@ -735,12 +963,18 @@ class LiveLoop:
             # attack animation the bar vanishes but the "X used Y!" text shows; brief
             # gaps are covered by the end grace. The panel (ui_present) only tunes the
             # grace; it never extends in_battle, so a dark cave still ends the battle.
-            in_battle = is_in_battle(reading.state, bt)
+            self._stable_in_battle, self._battle_debounce = debounce_battle(
+                is_in_battle(reading.state, bt), self._battle_debounce
+            )
+            in_battle = self._stable_in_battle
         else:
             from battle_reader import BattleReading, BattleState
 
             reading = BattleReading(state=BattleState.NO_BATTLE, bars=(), is_horde=False)
-            in_battle = bt.menu_present or bt.action or bt.caught
+            self._stable_in_battle, self._battle_debounce = debounce_battle(
+                bt.menu_present or bt.action or bt.caught, self._battle_debounce
+            )
+            in_battle = self._stable_in_battle
 
         grace = battle_end_grace(
             self._is_trainer,
@@ -776,6 +1010,8 @@ class LiveLoop:
             if not self._caught_printed:  # after a catch we already said "caught X!"
                 log.info("battle ended")
             self._caught_printed = False
+            self._battle_debounce = 0
+            self._stable_in_battle = False
             self.battle_panel.hide_battle()
             # Show the dex panel at once, from the pre-battle location (you can't
             # move during a battle, so it's still valid) -- no wait for the next
@@ -819,7 +1055,7 @@ class LiveLoop:
 
                     # Text changes produce ~100–300 changed pixels
                     # Noise produces <20
-                    return changed_pixels > 50
+                    return bool(changed_pixels > 50)
 
                 if _mask_changed(mask, getattr(self, "_last_seen_mask", None)):
                     self._last_seen_mask = mask
@@ -875,7 +1111,8 @@ class LiveLoop:
 
                         trigger_latency = now - getattr(self, "_last_loc_trigger", now)
                         from ocr_engine import _log_performance
-                        _log_performance("location_trigger_latency", trigger_latency, (0,0))
+
+                        _log_performance("location_trigger_latency", trigger_latency, (0, 0))
                         self._last_loc_trigger = now
 
                         self._loc_future = self.loc_pool.submit(
@@ -885,7 +1122,8 @@ class LiveLoop:
                         if self.dex_panel is not None:
                             self.dex_panel.set_loading(True)
                     else:
-                        # Do NOT queue multiple OCR tasks. If one is already queued, ignore new ones.
+                        # Do NOT queue multiple OCR tasks.
+                        # If one is already queued, ignore new ones.
                         if getattr(self, "_queued_loc_frame", None) is None:
                             self._queued_loc_frame = frame.copy()
                             self._queued_loc_mask = mask.copy()
@@ -950,9 +1188,7 @@ class LiveLoop:
                         )
                         if self.mode_override != "battle":
                             self.dex_panel.show_here(view)
-                        self.dex_panel.dock_to(
-                            client_rect.left, client_rect.top, client_rect.width
-                        )
+                        self.dex_panel.dock_to(client_rect.left, client_rect.top, client_rect.width)
 
         # Apply manual mode override UI forcing
         if self.mode_override == "dex":
@@ -1073,7 +1309,7 @@ class LiveLoop:
         # one. Throttled to 1.5s so background OCR doesn't burn CPU spinning.
         chat_turn = self.chat.poll()
         if self.mode_override != "dex" and now - getattr(self, "_last_chat_submit", 0.0) >= 1.5:
-            # OPTIMIZATION: Only burn CPU on chat OCR if the user actually cares about 
+            # OPTIMIZATION: Only burn CPU on chat OCR if the user actually cares about
             # turn-dependent mechanics (Timer Ball is active in the overlay).
             if "timer" not in self.settings.hidden_balls:
                 self.chat.submit(frame)

@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import csv
+import threading
 import time
 from pathlib import Path
-import threading
-_ocr_lock = threading.Lock()
+
 import numpy as np
+
+_ocr_lock = threading.Lock()
+
 
 _ocr_det = None
 _ocr_no_det = None
@@ -45,7 +48,7 @@ def preload() -> None:
     _engine_no_det()
 
 
-_csv_path = Path("hidden/ocr_performance.csv")
+_csv_path = Path("logs/ocr_performance.csv")
 
 
 def _log_performance(task: str, duration: float, size: tuple[int, ...]):
@@ -79,6 +82,7 @@ def run_ocr(image: np.ndarray, task_name: str = "run_ocr") -> list[str]:
         _log_performance(task_name, inference_time, image.shape)
         return [text for _box, text, _score in result] if result else []
 
+
 def run_ocr_no_det(image: np.ndarray, task_name: str = "run_ocr_no_det") -> list[str]:
     """OCR an image bypassing the text-detection network. Use only for pre-cropped single lines."""
     with _ocr_lock:
@@ -91,6 +95,7 @@ def run_ocr_no_det(image: np.ndarray, task_name: str = "run_ocr_no_det") -> list
 
     return [text for _box, text, _score in result] if result else []
 
+
 def run_ocr_lines(image: np.ndarray, task_name: str = "run_ocr_lines") -> list[str]:
     with _ocr_lock:
         t0 = time.time()
@@ -98,4 +103,3 @@ def run_ocr_lines(image: np.ndarray, task_name: str = "run_ocr_lines") -> list[s
         inference_time = time.time() - t0
         _log_performance(task_name, inference_time, image.shape)
         return sorted_ocr_lines(result)
-

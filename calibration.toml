@@ -20,10 +20,10 @@ full_fill_min_px = 206
 # player's own bar sits lower (y~0.45) and stays below search_bottom. NB the bar
 # is at a FIXED pixel y (~200), so search_bottom must stay generous enough to
 # include it on short windows (200/895=0.22 in batle_action_attack_chat_minimized_3).
-search_top = 0.0
-search_bottom = 0.30
-search_left = 0.03
-search_right = 0.97
+search_top = 0.2
+search_bottom = 0.3
+search_left = 0.12
+search_right = 0.88
 
 # Fill blob geometry: bar fill is 3-6 px tall in all fixtures (10x6 px in
 # red_health_no_status_cave.png); window-toolbar icons, status badges and
@@ -132,10 +132,10 @@ cyan = [85, 99]
 # where the HUD sits higher). Extra captured text (e.g. the title) is harmless --
 # cave-ness is decided by keywords. Verified on Eterna Forest / Victory Road /
 # Route 41 / Floaroma Town fixtures; the " Ch. N" suffix is stripped in code.
-top = 0.05
-bottom = 0.065
-left = 0.018
-right = 0.18
+top = 8
+bottom = 20
+left = 25
+right = 240
 upscale = 3
 
 [hud_time]
@@ -183,10 +183,10 @@ blob_ar_max = 3.5
 # every overworld -> 0.14-0.67 (Vmean 82-118). Battle membership uses THIS, not
 # the enemy HP bar (which vanishes during animations), so "battle ended" fires
 # only when the overlay actually disappears (faint / flee / back to overworld).
-top = 0.78
-bottom = 0.90
-left = 0.15
-right = 0.55
+top = 0.80
+bottom = 0.91
+left = 0.45
+right = 0.90
 dark_val_max = 90
 min_dark_frac = 0.90
 
@@ -249,8 +249,8 @@ action_match_min = 0.85
 # Mantine, Ursaring, Pachirisu, Tentacool incl. 1920x1080).
 dx0 = 2
 dx1 = 230
-dy0 = -34
-dy1 = -6
+dy0 = -28
+dy1 = -10
 upscale = 3
 # rapidfuzz WRatio 0-100; below this the OCR result is treated as unrecognized.
 min_match_score = 70.0
@@ -277,10 +277,10 @@ gender_pink_frac = 0.001    # pink-pixel fraction above which the icon is ♀
 # water Mantine, full_health_no_status Cascoon, red_health_no_status_cave Onix,
 # full_health_paralyzed, full_health_sleeping) vs 0 absent (full_health_trainer_
 # battle_poisoned Pachirisu, whose pink female symbol is hue ~156, outside red).
-dx0 = 0
+dx0 = 50
 dx1 = 250
-dy0 = -38
-dy1 = -4
+dy0 = -28
+dy1 = -8
 # Red hue wraps 0/179: a pixel is red if hue <= red_h_low OR hue >= red_h_high.
 red_h_low = 8
 red_h_high = 172

@@ -103,7 +103,7 @@ class DexSession:
         """Log genuinely unknown locations to a file so the user can review them."""
         import os
 
-        log_path = "hidden/locations.log"
+        log_path = "logs/locations.log"
 
         # Load existing logs on first use to prevent duplicates across app restarts
         if self._logged_unknowns is None:
