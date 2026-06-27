@@ -5,8 +5,15 @@ This repository is a **personal fork** of the original [ghostpixxel/ShakeChecker
 All credit for the concept, design, implementation, and research behind
 ShakeChecker belongs entirely to **ghostpixxel**.  
 This fork exists only for **personal development**, experimentation, and
-launcher improvements. Nothing here is intended to replace, compete with, or
-misrepresent the original project.
+launcher improvements.
+
+• Persistent Dex and battle panels for a smoother, always‑visible overlay experience.<br>
+• Dynamic location detection that correctly handles empty/no‑encounter areas.<br>
+• Thread‑pooled, asynchronous architecture with heavily optimized OCR calls.<br>
+• Z‑order–safe overlay behavior so panels never appear above unrelated windows.<br>
+• Enhanced region detection powered by the dynamic‑location system.<br>
+• Additional settings including panel auto‑switching, caught‑status toggles, and region overrides.<br>
+• One‑click debug capture that dumps the full game window with color‑coded regions and OCR slices.<br>
 
 ---
 
@@ -18,15 +25,10 @@ misrepresent the original project.
 **Latest Release:** https://github.com/ghostpixxel/ShakeChecker/releases/latest
 
 ShakeChecker is a passive, **read‑only** screen‑reading overlay for PokeMMO on
-Windows. It observes the game window during wild battles and displays:
-
-- live catch probabilities for each Poké Ball  
-- a “missing here” Pokédex panel while walking  
+Windows.
 
 It never sends input, reads memory, injects code, or interacts with the game
 client in any way. It is strictly a visual overlay.
-
-The core ShakeChecker application code remains the work of the original author.
 
 If you are looking for the official version of ShakeChecker,  
 **please use the original repository linked above.**
@@ -37,6 +39,3 @@ If you are looking for the official version of ShakeChecker,
 
 ShakeChecker is licensed under the terms provided by the original author.  
 All original copyrights, trademarks, and credits remain with **ghostpixxel**.
-
-Any modifications in this fork are strictly additive and do not alter the
-ownership or authorship of the original project.
