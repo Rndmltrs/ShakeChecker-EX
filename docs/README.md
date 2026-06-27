@@ -7,19 +7,13 @@ ShakeChecker belongs entirely to **ghostpixxel**.
 This fork exists only for **personal development**, experimentation, and
 launcher improvements.
 
--Persistent Dex and battle panels for a smoother, always‑visible overlay experience.
-
--Dynamic location detection that correctly handles empty/no‑encounter areas.
-
--Thread‑pooled, asynchronous architecture with heavily optimized OCR calls.
-
--Z‑order–safe overlay behavior so panels never appear above unrelated windows.
-
--Enhanced region detection powered by the new dynamic‑location system.
-
--Additional user settings including panel auto‑switching, caught‑status toggles, and region overrides.
-
--One‑click debug capture that dumps the full game window with color‑coded regions and OCR slices for troubleshooting.
+• Persistent Dex and battle panels for a smoother, always‑visible overlay experience.<br>
+• Dynamic location detection that correctly handles empty/no‑encounter areas.<br>
+• Thread‑pooled, asynchronous architecture with heavily optimized OCR calls.<br>
+• Z‑order–safe overlay behavior so panels never appear above unrelated windows.<br>
+• Enhanced region detection powered by the dynamic‑location system.<br>
+• Additional settings including panel auto‑switching, caught‑status toggles, and region overrides.<br>
+• One‑click debug capture that dumps the full game window with color‑coded regions and OCR slices.<br>
 
 ---
 
