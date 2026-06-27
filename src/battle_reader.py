@@ -22,6 +22,7 @@ import cv2
 import numpy as np
 from pydantic import BaseModel
 
+from core.utils import parse_coord
 
 class HpColor(enum.StrEnum):
     GREEN = "green"
@@ -170,19 +171,10 @@ class ChatCalibration(BaseModel):
     left: float
     right: float
     upscale: int
-    # The chat box is fixed pixel size at the window's bottom-left, so `right` (a
-    # fraction of WIDTH) over-captures badly on wide windows: at 3438 px, 0.40 is a
-    # 1375 px crop that is mostly empty, and OCR downscales it until the small chat
-    # text is illegible. Cap the crop width here so it stays a tight, legible strip
-    # regardless of window width. 0 disables the cap.
-    max_width_px: int = 0
-
     def crop_x(self, width: int) -> tuple[int, int]:
-        """(x0, x1) of the chat crop for a frame this wide, width-capped."""
-        x0 = int(width * self.left)
-        x1 = int(width * self.right)
-        if self.max_width_px:
-            x1 = min(x1, x0 + self.max_width_px)
+        """(x0, x1) of the chat crop for a frame this wide."""
+        x0 = parse_coord(self.left, width)
+        x1 = parse_coord(self.right, width)
         return x0, x1
 
 
@@ -194,6 +186,8 @@ class BattleTextCalibration(BaseModel):
     menu_match_min: float  # template-match score to call the command menu present
     catch_match_min: float  # template-match score to call the catch banner present
     action_match_min: float  # template-match score to call a committed action ("used")
+    height_px: int = 0
+    width_px: int = 0
 
 
 class TrainerCalibration(BaseModel):
@@ -450,63 +444,89 @@ def read_enemy_bars(
 
     `horde` forces the spread-horde status-badge offset (used for a horde narrowed
     to one bar, which can't be told apart by layout); otherwise it's auto-detected
-    from the bars' horizontal spread."""
+    from the bars' horizontal spread.
+    """
+    # PokeMMO locks its render to a fixed 1080p canvas; any extra resolution is
+    # dead space at the bottom (letterboxed vertically). HP bars therefore sit at
+    # the same absolute pixel rows regardless of window height — y0/y1 must be
+    # fractions of 1080, NOT of h. Horizontal space does scale with w normally.
+    # All structural dimensions (bar width/height, frame search_px, merge px,
+    # status offsets) are already in 1080p pixel space and need no scaling.
     c = cal.hp_bar
     h, w = frame_bgr.shape[:2]
-    y0 = int(c.search_top) if c.search_top > 1.0 else int(h * c.search_top)
-    y1 = int(c.search_bottom) if c.search_bottom > 1.0 else int(h * c.search_bottom)
-    x0 = int(c.search_left) if c.search_left > 1.0 else int(w * c.search_left)
-    x1 = int(c.search_right) if c.search_right > 1.0 else int(w * c.search_right)
+
+    # Game canvas constant — the engine never renders above this height.
+    GAME_H = 1080.0
+
+    # --- Search region: y anchored to game canvas, x scales with window width --
+    y0 = int(round(GAME_H * (c.search_top    if c.search_top    <= 1.0 else c.search_top    / GAME_H)))
+    y1 = int(round(GAME_H * (c.search_bottom if c.search_bottom <= 1.0 else c.search_bottom / GAME_H)))
+    x0 = int(round(w      * (c.search_left   if c.search_left   <= 1.0 else c.search_left   / 1920.0)))
+    x1 = int(round(w      * (c.search_right  if c.search_right  <= 1.0 else c.search_right  / 1920.0)))
+
+    # Clamp to actual frame bounds (y1 <= h guards against frames shorter than 1080)
+    y0, y1 = max(0, min(y0, h)), max(0, min(y1, h))
+    x0, x1 = max(0, min(x0, w)), max(0, min(x1, w))
+
     roi = frame_bgr[y0:y1, x0:x1]
-    hsv_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-    # Convert only the top search band to HSV, not the whole frame: every consumer
-    # below (fill run, frame outline, inner width, status badge) works at absolute
-    # rows that live inside this band, and search_top is 0 so the band starts at
-    # row 0 -- coordinates are unchanged. The pad covers the frame-outline scan that
-    # reaches search_px rows below the lowest fill. Saves ~70% of the per-frame
-    # cvtColor cost (the bottom of the frame is just the scene/menu, never a bar).
-    band_h = min(y1 + c.frame.search_px + 2, h)
-    hsv_band = cv2.cvtColor(frame_bgr[:band_h], cv2.COLOR_BGR2HSV)
+    if roi.size == 0:
+        return []
+
+    # --- HSV band: search ROI + frame-outline padding --------------------------
+    # frame.search_px is in the same 1080p pixel space as y0/y1, so no scaling.
+    start_y = max(0, y0 - c.frame.search_px - 2)
+    end_y   = min(h, y1 + c.frame.search_px + 2)
+    hsv_band = cv2.cvtColor(frame_bgr[start_y:end_y], cv2.COLOR_BGR2HSV)
+    hsv_roi = hsv_band[(y0 - start_y):(y1 - start_y), x0:x1]
 
     mask = _fill_mask(hsv_roi, c)
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((3, 9), np.uint8))
-    # uint8 mask is a valid input; the opencv-stubs dtype union is over-strict.
-    n, _, stats, _ = cv2.connectedComponentsWithStats(mask, 8)  # type: ignore[call-overload]
+    
+    n, _, stats, _ = cv2.connectedComponentsWithStats(mask, 8)
 
     bars: list[BarReading] = []
     for i in range(1, n):
         bx, by, bw, bh, _area = stats[i]
+        
+        # Bar fill must match the fixed PokeMMO bar dimensions exactly.
         if not (c.min_fill_height_px <= bh <= c.max_fill_height_px):
             continue
         if bw < c.min_fill_width_px:
             continue
-        # back to frame coordinates, measure on the blob's middle row
+
+        # Global frame coordinates of this candidate.
         fy = y0 + by + bh // 2
         fx = x0 + bx
-        run = _fill_run(hsv_band, fy, fx, c)
+
+        # Band-local coordinates for sub-scanner calls.
+        band_fy     = fy - start_y
+        band_y_top  = (y0 + by) - start_y
+        band_y_bottom = (y0 + by + bh - 1) - start_y
+
+        if not (0 <= band_fy < hsv_band.shape[0]):
+            continue
+
+        run = _fill_run(hsv_band, band_fy, fx, c)
         if run is None:
             continue
         rx0, rx1 = run
         fill_w = rx1 - rx0 + 1
+
         if fill_w > c.inner_width_px + c.width_tolerance_px:
-            continue  # wider than a bar can be: scenery / UI panel
-        if fill_w < c.full_fill_min_px and not _empty_part_is_crosshatch(hsv_band, fy, rx0, rx1, c):
+            continue  # wider than a bar: scenery / UI panel
+        if fill_w < c.full_fill_min_px and not _empty_part_is_crosshatch(hsv_band, band_fy, rx0, rx1, c):
             continue
-        if not _has_bar_frame(hsv_band, y0 + by, y0 + by + bh - 1, rx0, c):
+        if not _has_bar_frame(hsv_band, band_y_top, band_y_bottom, rx0, c):
             continue
-        hues = hsv_band[fy, rx0 : rx1 + 1, 0].astype(float)
+
+        hues  = hsv_band[band_fy, rx0 : rx1 + 1, 0].astype(float)
         color = _classify_color(float(np.median(hues)), c.hsv)
-        # Size the bar by its OWN inner width (measured from the gray frame outline),
-        # not a fixed count: a full but narrower horde bar (212 px) then reads 100%,
-        # not 97%. Single bars measure 218 and are unchanged.
-        inner = _inner_width(hsv_band, y0 + by, y0 + by + bh - 1, rx0, c)
+        inner = _inner_width(hsv_band, band_y_top, band_y_bottom, rx0, c)
         hp_pct = min(100.0, 100.0 * fill_w / inner)
-        # status read AFTER the layout is known (its badge offset differs in hordes)
+
         bars.append(BarReading(round(hp_pct, 1), color, Status.NONE, rx0, fy))
 
-    # Merge duplicate detections of the SAME bar (multiple blobs per fill), which
-    # land at the same x AND y. Horde bars sit at the same y but different x, so
-    # requiring x-proximity too keeps them as separate bars (and counts the horde).
+    # --- Merge duplicate detections of the same bar ----------------------------
     bars.sort(key=lambda b: (b.y, b.x))
     merged: list[BarReading] = []
     for bar in bars:
@@ -521,16 +541,28 @@ def read_enemy_bars(
             continue
         merged.append(bar)
 
-    # Spread horde, the caller's hint, OR a lone remnant sitting at the horde slot
-    # -> the status badge is on the RIGHT of the fill, not the left. Read each bar's
-    # status with the matching offset.
+    # --- Status badge: offsets are fixed pixel distances, no scaling needed ----
     s = cal.status
-    if _is_horde_layout(
-        merged, w, horde, spread_px=c.horde_spread_px, remnant_frac=c.remnant_x_frac
-    ):
-        s = s.model_copy(update={"dx0": s.horde_dx0, "dx1": s.horde_dx1})
+    if _is_horde_layout(merged, w, horde, spread_px=c.horde_spread_px, remnant_frac=c.remnant_x_frac):
+        dx0, dx1 = s.horde_dx0, s.horde_dx1
+    else:
+        dx0, dx1 = s.dx0, s.dx1
+
     return [
-        BarReading(b.hp_pct, b.color, read_status(hsv_band, b.x, b.y, s), b.x, b.y) for b in merged
+        BarReading(
+            b.hp_pct,
+            b.color,
+            classify_status_box(
+                hsv_band[
+                    max(0, b.y + s.dy0 - start_y) : min(hsv_band.shape[0], b.y + s.dy1 - start_y),
+                    max(0, b.x + dx0) : min(w, b.x + dx1),
+                ],
+                s,
+            ),
+            b.x,
+            b.y,
+        )
+        for b in merged
     ]
 
 
@@ -552,46 +584,61 @@ def is_battle_ui_present(frame_bgr: np.ndarray, cal: BattleUiCalibration) -> boo
 
 
 def is_trainer_battle(frame_bgr: np.ndarray, bar: BarReading, cal: TrainerCalibration) -> bool:
-    """True if the enemy bar belongs to a TRAINER battle (nothing catchable).
+    """
+    True if the enemy bar belongs to a TRAINER battle.
 
-    A trainer's party indicator — a lead mini-sprite plus a row of small party
-    balls — sits in a fixed strip just below the enemy HP bar. Wild battles have
-    only the battle scene there.
+    Trainer battles show a compact row of party icons (mini-sprite + balls)
+    in a fixed strip just below the enemy HP bar. Wild battles never show this.
 
-    Two gates, both needed (rain/snow paint the otherwise-empty wild strip with
-    diagonal streaks, which the edge test alone read as a trainer):
-      1. edge density (Canny): a cheap reject of a calm, empty wild strip
-         (measures exactly 0.000 on every static wild fixture).
-      2. icon SHAPE: the party icons are compact blobs (aspect ~1, bounded area).
-         Weather streaks are long, thin, diagonal -> extreme aspect ratio -> they
-         fail this gate, so a rainy wild strip no longer reads as a trainer.
-    See [trainer] in calibration.toml."""
+    Two gates (both required):
+      1. Edge density: cheap reject for calm wild strips (static wild = 0.000).
+      2. Shape gate: trainer icons form compact blobs; weather streaks are long,
+         thin, diagonal, and fail the aspect/area tests.
+    """
+    # Strip coordinates under the HP bar
     y0, y1 = bar.y + cal.dy0, bar.y + cal.dy1
     x0, x1 = bar.x, bar.x + cal.width_px
+
+    # Bounds check
     if y0 < 0 or x0 < 0 or y1 > frame_bgr.shape[0] or x1 > frame_bgr.shape[1]:
         return False
+
     strip = frame_bgr[y0:y1, x0:x1]
     if strip.size == 0:
         return False
+
+    # Convert + blur to kill 1px weather streaks
     gray = cv2.cvtColor(strip, cv2.COLOR_BGR2GRAY)
-    # Apply a Gaussian blur to wash out 1-pixel-thick rain/snow streaks.
-    # Real trainer icons are dense and multi-pixel, so their edges survive the blur.
     gray = cv2.GaussianBlur(gray, (5, 5), 0)
+
+    # Edge density gate
     edges = cv2.Canny(gray, 50, 150)
-    if float(np.mean(edges)) / 255.0 < cal.edge_frac_min:
+    edge_frac = float(np.mean(edges)) / 255.0
+    if edge_frac < cal.edge_frac_min:
         return False
-    # Count compact, icon-shaped edge blobs; ignore thin/long weather streaks.
+
+    # Shape gate: compact blobs only
     edges = cv2.dilate(edges, np.ones((2, 2), np.uint8))
     contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
     blobs = 0
     for c in contours:
-        w, h = cv2.boundingRect(c)[2:]
+        x, y, w, h = cv2.boundingRect(c)
+
+        # Minimum side length
         if w < cal.blob_min_side_px or h < cal.blob_min_side_px:
             continue
-        if not (cal.blob_area_min_px <= w * h <= cal.blob_area_max_px):
+
+        # Contour area (more accurate than w*h)
+        area = cv2.contourArea(c)
+        if not (cal.blob_area_min_px <= area <= cal.blob_area_max_px):
             continue
-        if cal.blob_ar_min <= w / h <= cal.blob_ar_max:
+
+        # Aspect ratio gate
+        ar = w / h
+        if cal.blob_ar_min <= ar <= cal.blob_ar_max:
             blobs += 1
+
     return blobs >= cal.min_blobs
 
 
@@ -652,10 +699,10 @@ class BattleTextReader:
     def read(self, frame_bgr: np.ndarray) -> BattleText:
         c = self._cal
         h, w = frame_bgr.shape[:2]
-        y1 = int(c.top) if c.top > 1.0 else int(h * c.top)
-        y2 = int(c.bottom) if c.bottom > 1.0 else int(h * c.bottom)
-        x1 = int(c.left) if c.left > 1.0 else int(w * c.left)
-        x2 = int(c.right) if c.right > 1.0 else int(w * c.right)
+        y1 = parse_coord(c.top, h)
+        y2 = parse_coord(c.bottom, h)
+        x1 = parse_coord(c.left, w)
+        x2 = parse_coord(c.right, w)
         band = frame_bgr[y1:y2, x1:x2]
         if band.size == 0:
             return BattleText(menu_present=False, caught=False, action=False)

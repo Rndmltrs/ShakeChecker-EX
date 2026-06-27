@@ -5,10 +5,6 @@
 # real‑time Pokémon catch‑probability overlay. It validates Python, activates
 # the virtual environment, ensures dependencies are installed, and provides a
 # menu for running the app, testing, linting, and building the executable.
-#
-# This rewritten version removes all QuickEdit toggling and console‑mode
-# manipulation. It relies entirely on the terminal's native selection behavior,
-# which avoids freezes and allows normal Ctrl+A / Ctrl+C usage.
 # ==============================================================================
 
 $ErrorActionPreference = "Stop"

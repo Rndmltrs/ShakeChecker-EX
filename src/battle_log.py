@@ -21,6 +21,7 @@ import cv2
 import numpy as np
 
 from battle_reader import ChatCalibration
+from core.utils import parse_coord
 from ocr_engine import run_ocr_lines, sorted_ocr_lines
 
 # "Turn 2 started!" — tolerate OCR spacing/case noise.
@@ -47,8 +48,8 @@ def read_turn_number(frame_bgr: np.ndarray, cal: ChatCalibration) -> int | None:
     """Current turn number (1-based) from the chat, or None if not readable."""
     h, w = frame_bgr.shape[:2]
     x0, x1 = cal.crop_x(w)
-    y0 = int(cal.top) if cal.top > 1.0 else int(h * cal.top)
-    y1 = int(cal.bottom) if cal.bottom > 1.0 else int(h * cal.bottom)
+    y0 = parse_coord(cal.top, h)
+    y1 = parse_coord(cal.bottom, h)
     crop = frame_bgr[y0:y1, x0:x1]
     if crop.size == 0:
         return None
@@ -81,8 +82,8 @@ class AsyncChatReader:
         c = self._cal
         h, w = frame_bgr.shape[:2]
         x0, x1 = c.crop_x(w)
-        y0 = int(c.top) if c.top > 1.0 else int(h * c.top)
-        y1 = int(c.bottom) if c.bottom > 1.0 else int(h * c.bottom)
+        y0 = parse_coord(c.top, h)
+        y1 = parse_coord(c.bottom, h)
         crop = frame_bgr[y0:y1, x0:x1].copy()  # copy: the worker reads it after this frame is gone
         self._future = self._pool.submit(self._read, crop)
 

@@ -48,8 +48,11 @@ from battle_logic import (
 from battle_panel import BattlePanel
 from battle_reader import (
     BattleState,
+    BattleText,
     BattleTextReader,
     Calibration,
+    ChatCalibration,
+    HpColor,
     Status,
     is_battle_ui_present,
     is_trainer_battle,
@@ -57,6 +60,7 @@ from battle_reader import (
     read_battle,
     read_caught_icon,
 )
+from core.utils import parse_coord
 from catch_calc import BattleContext, ball_multiplier, catch_probability
 from catch_chain import CatchChain
 from dex_panel import DexPanel
@@ -625,10 +629,10 @@ class LiveLoop:
         # 2. HP BAR SEARCH REGION (blue)
         # ---------------------------------------------------------
         c_hp = self.cal.hp_bar
-        sy0 = int(c_hp.search_top) if c_hp.search_top > 1.0 else int(h * c_hp.search_top)
-        sy1 = int(c_hp.search_bottom) if c_hp.search_bottom > 1.0 else int(h * c_hp.search_bottom)
-        sx0 = int(c_hp.search_left) if c_hp.search_left > 1.0 else int(w * c_hp.search_left)
-        sx1 = int(c_hp.search_right) if c_hp.search_right > 1.0 else int(w * c_hp.search_right)
+        sy0 = parse_coord(c_hp.search_top, h)
+        sy1 = parse_coord(c_hp.search_bottom, h)
+        sx0 = parse_coord(c_hp.search_left, w)
+        sx1 = parse_coord(c_hp.search_right, w)
         cv2.rectangle(annotated, (sx0, sy0), (sx1, sy1), (255, 0, 0), 2)
 
         # ---------------------------------------------------------
@@ -636,8 +640,8 @@ class LiveLoop:
         # ---------------------------------------------------------
         c_chat = self.cal.chat
         cx0, cx1 = c_chat.crop_x(w)
-        cy0 = int(c_chat.top) if c_chat.top > 1.0 else int(h * c_chat.top)
-        cy1 = int(c_chat.bottom) if c_chat.bottom > 1.0 else int(h * c_chat.bottom)
+        cy0 = parse_coord(c_chat.top, h)
+        cy1 = parse_coord(c_chat.bottom, h)
         if 0 <= cy0 < cy1 <= h and 0 <= cx0 < cx1 <= w:
             cv2.rectangle(annotated, (cx0, cy0), (cx1, cy1), (255, 255, 0), 2)
 
@@ -645,30 +649,30 @@ class LiveLoop:
         # 4. LOCATION REGION (purple)
         # ---------------------------------------------------------
         c_loc = self.cal.location
-        ly0 = int(c_loc.top) if c_loc.top > 1.0 else int(h * c_loc.top)
-        ly1 = int(c_loc.bottom) if c_loc.bottom > 1.0 else int(h * c_loc.bottom)
-        lx0 = int(c_loc.left) if c_loc.left > 1.0 else int(w * c_loc.left)
-        lx1 = int(c_loc.right) if c_loc.right > 1.0 else int(w * c_loc.right)
+        ly0 = parse_coord(c_loc.top, h)
+        ly1 = parse_coord(c_loc.bottom, h)
+        lx0 = parse_coord(c_loc.left, w)
+        lx1 = parse_coord(c_loc.right, w)
         cv2.rectangle(annotated, (lx0, ly0), (lx1, ly1), (255, 0, 255), 2)
 
         # ---------------------------------------------------------
         # 5. BATTLE UI REGION (orange)
         # ---------------------------------------------------------
         c_ui = self.cal.battle_ui
-        uy0 = int(c_ui.top) if c_ui.top > 1.0 else int(h * c_ui.top)
-        uy1 = int(c_ui.bottom) if c_ui.bottom > 1.0 else int(h * c_ui.bottom)
-        ux0 = int(c_ui.left) if c_ui.left > 1.0 else int(w * c_ui.left)
-        ux1 = int(c_ui.right) if c_ui.right > 1.0 else int(w * c_ui.right)
+        uy0 = parse_coord(c_ui.top, h)
+        uy1 = parse_coord(c_ui.bottom, h)
+        ux0 = parse_coord(c_ui.left, w)
+        ux1 = parse_coord(c_ui.right, w)
         cv2.rectangle(annotated, (ux0, uy0), (ux1, uy1), (0, 165, 255), 2)
 
         # ---------------------------------------------------------
         # 6. BATTLE TEXT REGION (pink)
         # ---------------------------------------------------------
         c_bt = self.cal.battle_text
-        by0 = int(c_bt.top) if c_bt.top > 1.0 else int(h * c_bt.top)
-        by1 = int(c_bt.bottom) if c_bt.bottom > 1.0 else int(h * c_bt.bottom)
-        bx0 = int(c_bt.left) if c_bt.left > 1.0 else int(w * c_bt.left)
-        bx1 = int(c_bt.right) if c_bt.right > 1.0 else int(w * c_bt.right)
+        by0 = parse_coord(c_bt.top, h)
+        by1 = parse_coord(c_bt.bottom, h)
+        bx0 = parse_coord(c_bt.left, w)
+        bx1 = parse_coord(c_bt.right, w)
         cv2.rectangle(annotated, (bx0, by0), (bx1, by1), (255, 105, 180), 2)
 
         # ---------------------------------------------------------
@@ -688,16 +692,25 @@ class LiveLoop:
         ]
 
         font = cv2.FONT_HERSHEY_DUPLEX
-        scale = 0.7
-        thickness = 2
-        line_height = 28
+        scale = 0.4
+        thickness = 1
+        line_height = 16
 
-        y = h - (line_height * len(legend)) - 20
+        y = 20  # top padding
 
         for text, color in legend:
             text_width = cv2.getTextSize(text, font, scale, thickness)[0][0]
             x = w - text_width - 20
+
+            # Outline (stroke)
+            cv2.putText(annotated, text, (x-1, y-1), font, scale, (0, 0, 0), thickness+1, cv2.LINE_AA)
+            cv2.putText(annotated, text, (x+1, y-1), font, scale, (0, 0, 0), thickness+1, cv2.LINE_AA)
+            cv2.putText(annotated, text, (x-1, y+1), font, scale, (0, 0, 0), thickness+1, cv2.LINE_AA)
+            cv2.putText(annotated, text, (x+1, y+1), font, scale, (0, 0, 0), thickness+1, cv2.LINE_AA)
+
+            # Main text
             cv2.putText(annotated, text, (x, y), font, scale, color, thickness, cv2.LINE_AA)
+
             y += line_height
 
         # ---------------------------------------------------------
@@ -859,17 +872,6 @@ class LiveLoop:
                     handle.setTransientParent(proxy)
 
     def _tick(self) -> float:
-        # Reset manual override if the app state changes naturally
-        if self.state != getattr(self, "_last_state", None):
-            self.settings_panel.close()
-            if (
-                getattr(self, "_last_state", None) is not None
-                and self.mode_override != "auto"
-                and self.settings.auto_switch
-            ):
-                log.info("state changed -> resetting mode to auto")
-                self.mode_override = "auto"
-            self._last_state = self.state
 
         if self.state is AppState.WAITING:
             self.hwnd = find_pokemmo_hwnd()
@@ -1017,14 +1019,20 @@ class LiveLoop:
             # move during a battle, so it's still valid) -- no wait for the next
             # throttled OCR tick. _last_loc_check is reset so OCR re-confirms soon.
             self._last_loc_check = 0.0
-            if self.dex_panel is not None and self.dex is not None and self._last_hud:
-                view = self.dex.on_location(self._last_hud)
+            if self.dex_panel is not None and self.dex is not None and self.settings.auto_switch:
+                # Restore the dex panel immediately using the pre-battle location
+                # (position hasn't changed during the battle). If the location
+                # isn't known yet, show a loading state so the panel is visible;
+                # the next throttled OCR tick will fill it in.
+                view = self.dex.on_location(self._last_hud) if self._last_hud else None
+                self.dex_panel.apply_scale(
+                    self.settings.dex_scale or scale_for_window(client_rect.height)
+                )
                 if view is not None:
-                    self.dex_panel.apply_scale(
-                        self.settings.dex_scale or scale_for_window(client_rect.height)
-                    )
                     self.dex_panel.show_here(view)
-                    self.dex_panel.dock_to(client_rect.left, client_rect.top, client_rect.width)
+                else:
+                    self.dex_panel.show()
+                self.dex_panel.dock_to(client_rect.left, client_rect.top, client_rect.width)
 
         # Walking around (not in battle): refresh the "missing here" dex panel from
         # the HUD location on a throttle (location OCR is slow, location changes
@@ -1371,8 +1379,6 @@ class LiveLoop:
             else:
                 self._is_trainer = is_trainer_battle(frame, bar, self.cal.trainer)
             self._trainer_decided = True
-            if self._is_trainer:
-                log.info("trainer battle: overlay hidden")
         # Catch: announce once when the "Gotcha!" banner holds for 2+ frames (a
         # single stray match never triggers it). This does NOT freeze the overlay
         # -- the loop keeps updating so the turn still self-corrects from the chat;
@@ -1414,12 +1420,29 @@ class LiveLoop:
                         alpha=False,
                     )
                     self.battle_panel.dock_to(rect.left, rect.top, rect.width)
-        elif reading.state is BattleState.MULTI and self.last_line != "multi":
-            # horde / double: wait until a single wild Pokemon remains
-            log.info("multiple enemy bars (horde): waiting for one to remain")
-            self.last_line = "multi"
-            self.battle_panel.hide_battle()
-        # NO_BATTLE while in battle = intro/animation: keep the overlay as is
+        elif reading.state is BattleState.MULTI:
+            if self.last_line != "multi":
+                # horde / double: wait until a single wild Pokemon remains
+                log.info("multiple enemy bars (horde): waiting for one to remain")
+                self.last_line = "multi"
+            
+            if self.mode_override != "dex":
+                self.battle_panel.apply_scale(
+                    self.settings.battle_scale or scale_for_window(rect.height)
+                )
+                self.battle_panel.show_battle(
+                    dex_id=0,
+                    name="Horde Battle",
+                    catch_rate=None,
+                    turn=self.turns.turns_completed + 1,
+                    probs={},
+                    level=None,
+                    status=None,
+                    hp_pct=None,
+                    alpha=False,
+                )
+                self.battle_panel.dock_to(rect.left, rect.top, rect.width)
+
 
     def _on_catch(self, enemy: dict) -> None:
         """Advance the Repeat Ball catch chain after a successful catch: +1 if it
@@ -1430,11 +1453,13 @@ class LiveLoop:
         length = self._chain.record_catch(sid)
         log.debug("repeat chain: %s x%d", enemy.get("name"), length)
 
+
     def _chain_for(self, enemy: dict | None) -> int:
         """The current catch chain length that applies to THIS enemy: the running
         chain if it's the same species, else 0 (Repeat Ball shows 1x for a fresh
         species)."""
         return self._chain.length_for(enemy.get("id") if enemy else None)
+
 
     def _update_single(self, frame, bar, rect, is_trainer: bool = False) -> None:
         hp_pct = self.hp.update(bar.hp_pct)  # wait for the bar to settle
@@ -1632,8 +1657,7 @@ class LiveLoop:
                     )
                     self.dex_panel.show_here(view)
                     self.dex_panel.dock_to(client_rect.left, client_rect.top, client_rect.width)
-                elif view is None:
-                    self.dex_panel.hide_panel()
+
 
     def _set_dex_scale(self, scale: float | None) -> None:
         self.settings.set_dex_scale(scale)

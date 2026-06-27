@@ -1,5 +1,14 @@
 # All CV calibration values live here (CLAUDE.md convention: every magic
 # number names the fixture that justifies it). Loaded by battle_reader.py.
+#
+# ==============================================================================
+# Coordinate System:
+# All 'top', 'bottom', 'left', and 'right' bounding box values support two modes:
+# 1. Fractional (0.0 to 1.0): Scales with resolution (e.g., 0.5 is the exact center).
+# 2. Absolute Pixels: Locks the position regardless of resolution.
+#    - Positive numbers (> 1.0) count from the TOP or LEFT edge.
+#    - Negative numbers (< 0.0) count from the BOTTOM or RIGHT edge.
+# ==============================================================================
 
 [hp_bar]
 # Inner width of the enemy HP bar in px. The battle UI renders at a fixed
@@ -20,10 +29,10 @@ full_fill_min_px = 206
 # player's own bar sits lower (y~0.45) and stays below search_bottom. NB the bar
 # is at a FIXED pixel y (~200), so search_bottom must stay generous enough to
 # include it on short windows (200/895=0.22 in batle_action_attack_chat_minimized_3).
-search_top = 0.2
+search_top = 0.1
 search_bottom = 0.3
-search_left = 0.12
-search_right = 0.88
+search_left = 0.04
+search_right = 0.60
 
 # Fill blob geometry: bar fill is 3-6 px tall in all fixtures (10x6 px in
 # red_health_no_status_cave.png); window-toolbar icons, status badges and
@@ -160,9 +169,9 @@ upscale = 3
 # blobs (the party sprite + balls): weather is thin diagonal streaks (extreme aspect
 # ratio) and fails the shape gate. Trainer fixtures -> 1-2 blobs; wild -> 0.
 # width_px matches the bar inner width (218).
-dy0 = 20
-dy1 = 60
-width_px = 218
+dy0 = 43
+dy1 = 67
+width_px = 216
 edge_frac_min = 0.004
 # Shape gate: how many compact icon-blobs must the strip hold to be a trainer, and
 # what counts as "compact" (bounding box). Streaky weather makes long thin contours
@@ -170,9 +179,9 @@ edge_frac_min = 0.004
 min_blobs = 1
 blob_min_side_px = 2
 blob_area_min_px = 4
-blob_area_max_px = 2000
-blob_ar_min = 0.2
-blob_ar_max = 3.5
+blob_area_max_px = 1200
+blob_ar_min = 0.4
+blob_ar_max = 2.5
 
 [battle_ui]
 # Authoritative "in a battle" signal: the battle screen has a uniform dark
@@ -191,27 +200,16 @@ dark_val_max = 90
 min_dark_frac = 0.90
 
 [chat]
-# Battle chat log, bottom-left of the WINDOW. Unlike the battle viewport (which
-# is letterboxed and shifts with window size) the chat sits at a stable window
-# position, so a fractional crop is reliable. It prints "Turn N started!", which
-# the turn counter reads via OCR. Verified legible on full_health_no_status
-# (shows "Turn 2 started!") and live_turn9_gible (Turn 9). Captures ~7 lines, so
-# "Turn N started!" stays in view for several follow-up messages (move/effect/
-# faint), which lets a 2-turn move (Fly/Solarbeam: no menu that turn) still be
-# corrected from the chat. Requires the battle chat to be visible.
-top = 0.90
-bottom = 0.985
-left = 0.0
-right = 0.40
+# Battle chat log, anchored to the bottom-left of the WINDOW. 
+# To perfectly frame the chat across all resolutions (resolution independent):
+# The chat is a fixed pixel size and anchored to the left edge, so use
+# absolute positive pixels for `left` and `right` (e.g. left = 46, right = 192).
+# It prints "Turn N started!", which the turn counter reads via OCR.
+top = -58
+bottom = -43
+left = 46
+right = 192
 upscale = 2
-# The chat box is fixed pixel size, so `right` (a fraction of WIDTH) over-captures
-# on wide windows: at 3438 px wide, 0.40 is a 1375 px crop that is mostly empty and
-# OCR shrinks it until the chat text is illegible (the turn stopped updating live on
-# an ultrawide window). The actual chat text never reaches past ~330 px from the
-# left (measured: full_health_no_status 330 px @ w=1996, live_turn9_gible 213 px @
-# w=1382), so cap the crop width well above that. Kills the wide-window bloat
-# (1375 -> 600) while leaving normal/narrow windows unchanged.
-max_width_px = 600
 
 [battle_text]
 # The in-viewport text area at the bottom of the centered battle viewport, which
@@ -225,9 +223,9 @@ max_width_px = 600
 # 0.65-0.75 in ~1.39 windows, 0.52-0.61 in 16:9); it also sits ABOVE the chat
 # (y < 0.82 < 0.90). Verified scores: menu present 0.98-1.0 vs 0.29-0.36 absent;
 # catch 1.0 vs <=0.63 absent -- so 0.72 separates both with margin.
-top = 0.48
-bottom = 0.82
-left = 0.04
+top = 0.60
+bottom = 0.78
+left = 0.02
 right = 0.60
 menu_match_min = 0.72
 # catch ("Gotcha!") must NOT fire on a switch's "Go! Y!" (shares "Go", ~0.77) --
@@ -249,8 +247,8 @@ action_match_min = 0.85
 # Mantine, Ursaring, Pachirisu, Tentacool incl. 1920x1080).
 dx0 = 2
 dx1 = 230
-dy0 = -28
-dy1 = -10
+dy0 = -27
+dy1 = -8
 upscale = 3
 # rapidfuzz WRatio 0-100; below this the OCR result is treated as unrecognized.
 min_match_score = 70.0
@@ -280,7 +278,7 @@ gender_pink_frac = 0.001    # pink-pixel fraction above which the icon is ♀
 dx0 = 50
 dx1 = 250
 dy0 = -28
-dy1 = -8
+dy1 = -10
 # Red hue wraps 0/179: a pixel is red if hue <= red_h_low OR hue >= red_h_high.
 red_h_low = 8
 red_h_high = 172
