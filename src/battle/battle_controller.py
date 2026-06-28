@@ -8,19 +8,13 @@ from typing import Any
 import numpy as np
 from PyQt6.QtCore import QRect
 
-from battle.battle_log import AsyncChatReader
 from battle.battle_logic import apply_chat_turn, debounce_menu, is_horde_remnant
 from battle.battle_reader import BattleState, Calibration, Status, is_trainer_battle, read_caught_icon
 from battle.catch_calc import ball_probs, battle_context, format_line, chain_for
-from battle.catch_chain import CatchChain
-from battle.hp_settler import HpSettler
-from battle.name_reader import NameReader
-from battle.status_settler import StatusSettler
-from battle.turn_tracker import TurnTracker
 
-from core.app_state import BATTLE_START_GRACE_S, TURN_DOWN_GUARD_S, MENU_STABLE_FRAMES
 from core.game_time import current_game_minute, is_dusk_ball_night
 from dex.location_reader import is_cave_location
+from core.services import OcrServices, BattleServices, AppConfig
 
 log = logging.getLogger("shakechecker")
 
@@ -44,12 +38,16 @@ class BattleUpdate:
 class BattleController:
     def __init__(
         self,
+        *,
         species_override: dict | None,
         status_override: str | None,
         cal: Calibration,
         balls: list[dict],
         status_rates: dict[str, float],
         pool: ThreadPoolExecutor,
+        ocr: OcrServices,
+        services: BattleServices,
+        config: AppConfig,
     ) -> None:
         self.species_override = species_override
         self.status_override = status_override
@@ -57,13 +55,14 @@ class BattleController:
         self.balls = balls
         self.status_rates = status_rates
         self.pool = pool
-        self.name_reader: NameReader | None = None
+        self.ocr = ocr
+        self.config = config
 
-        self.chat = AsyncChatReader(cal.chat)
-        self.turns = TurnTracker()
-        self.hp = HpSettler()
-        self.status = StatusSettler()
-        self._chain = CatchChain()
+        self.chat = ocr.chat_reader
+        self.turns = services.turns
+        self.hp = services.hp
+        self.status = services.status
+        self._chain = services.chain
 
         # Trackers
         self.cached: dict | None = None
@@ -109,8 +108,7 @@ class BattleController:
         self._last_chat_submit = 0.0
         self._battle_start = now
 
-    def set_name_reader(self, name_reader: NameReader | None) -> None:
-        self.name_reader = name_reader
+
 
     def get_vision_hint(self) -> bool:
         """Returns the horde hint for the vision pipeline."""
@@ -163,9 +161,9 @@ class BattleController:
             asleep=asleep,
             now=now,
             last_advance=self._last_advance,
-            down_guard_s=TURN_DOWN_GUARD_S,
+            down_guard_s=self.config.turn_down_guard_s,
             battle_start=self._battle_start,
-            start_grace_s=BATTLE_START_GRACE_S,
+            start_grace_s=self.config.battle_start_grace_s,
         )
         if outcome in ("down", "up"):
             shown = self.turns.turns_completed + 1
@@ -176,7 +174,7 @@ class BattleController:
             self._menu_raw,
             self._menu_streak,
             self._menu_stable,
-            threshold=MENU_STABLE_FRAMES,
+            threshold=self.config.menu_stable_frames,
         )
 
         before = self.turns.turns_completed
@@ -267,8 +265,8 @@ class BattleController:
         if self.species_override is not None:
             self.cached = self.species_override
         elif self.cached is None:
-            if self._name_future is None and self.name_reader is not None:
-                self._name_future = self.pool.submit(self.name_reader.read, f.frame.copy(), bar)
+            if self._name_future is None and self.ocr.name_reader is not None:
+                self._name_future = self.pool.submit(self.ocr.name_reader.read, f.frame.copy(), bar)
             elif self._name_future is not None and self._name_future.done():
                 sp = self._name_future.result()
                 self._name_future = None
@@ -276,9 +274,9 @@ class BattleController:
                     self.cached = sp
                     rate_str = "??" if sp["catch_rate"] is None else sp["catch_rate"]
                     log.info(f"identified: {sp['name']} (catch rate {rate_str})")
-        elif self.cached.get("level") is None and self.name_reader is not None:
+        elif self.cached.get("level") is None and self.ocr.name_reader is not None:
             if self._name_future is None:
-                self._name_future = self.pool.submit(self.name_reader.read, f.frame.copy(), bar)
+                self._name_future = self.pool.submit(self.ocr.name_reader.read, f.frame.copy(), bar)
             elif self._name_future is not None and self._name_future.done():
                 sp = self._name_future.result()
                 self._name_future = None

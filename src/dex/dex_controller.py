@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dex import location_reader
 from dex.dex_session import DexSession
 from dex.dex_structures import LocationView
-from core.app_state import DEX_LOC_INTERVAL_S, LOC_MASK_STABLE_S
+from core.services import AppConfig
 
 
 @dataclass
@@ -25,9 +25,10 @@ class DexUpdate:
 
 
 class DexController:
-    def __init__(self, dex_session: DexSession | None, loc_pool: ThreadPoolExecutor):
+    def __init__(self, *, dex_session: DexSession | None, loc_pool: ThreadPoolExecutor, config: AppConfig):
         self.dex = dex_session
         self.loc_pool = loc_pool
+        self.config = config
         
         self._loc_ocr_raw = ""
         self._last_hud = ""
@@ -62,8 +63,7 @@ class DexController:
     def load_profile(self, account: str) -> None:
         if self.dex is not None:
             from dex.dex_structures import CaughtStore
-            from core.app_state import USERDATA
-            self.dex.set_caught(CaughtStore.for_account(USERDATA, account))
+            self.dex.set_caught(CaughtStore.for_account(self.config.userdata_path, account))
 
     def step(self, frame: DexFrame) -> DexUpdate:
         if frame.in_battle or self.dex is None:
@@ -99,8 +99,8 @@ class DexController:
             self._mask_changed_since = now
 
     def _step_queue_ocr(self, mask: np.ndarray, hud_crop: np.ndarray, now: float) -> None:
-        dex_due = now - self._last_loc_check >= DEX_LOC_INTERVAL_S
-        is_stable = now - self._mask_stable_since >= LOC_MASK_STABLE_S
+        dex_due = now - self._last_loc_check >= self.config.dex_loc_interval_s
+        is_stable = now - self._mask_stable_since >= self.config.loc_mask_stable_s
         changed = self._mask_changed(mask, self._last_loc_mask)
         ready = is_stable and changed
 
@@ -141,7 +141,7 @@ class DexController:
                 self._last_loc_check = 0.0
 
             if self._queued_loc_frame is not None and self._queued_loc_mask is not None:
-                if now - self._last_loc_check >= DEX_LOC_INTERVAL_S:
+                if now - self._last_loc_check >= self.config.dex_loc_interval_s:
                     self._loc_future = self.loc_pool.submit(
                         location_reader.read_location, self._queued_loc_frame
                     )

@@ -11,13 +11,12 @@ from PyQt6.QtWidgets import QApplication, QWidget
 from PyQt6.QtGui import QWindow
 
 from battle.battle_logic import battle_end_grace, debounce_battle, is_in_battle
-from battle.battle_reader import BattleState, Calibration, Status, is_battle_ui_present, read_battle, BattleTextReader
-from battle.name_reader import NameReader
+from battle.battle_reader import BattleState, Calibration, Status, is_battle_ui_present, read_battle
 from battle.battle_controller import BattleController, BattleFrame
 
 from core.account_store import AccountConfig
 
-from core.app_state import (BATTLE_ANIM_GRACE_S, BATTLE_END_GRACE_S, BATTLE_FRAME_S, BATTLE_START_GRACE_S, DEX_LOC_INTERVAL_S, IDLE_FRAME_S, LOC_MASK_STABLE_S, MENU_STABLE_FRAMES, SPECIES_PATH, TEMPLATES_DIR, TRAINER_END_GRACE_S, TURN_DOWN_GUARD_S, USERDATA, WAITING_POLL_S, AppState, load_balls, load_status_rates)
+from core.app_state import AppState
 from core import paths
 from core.game_time import current_game_minute, is_dusk_ball_night
 from core.settings_store import Settings
@@ -32,6 +31,7 @@ from ui.dex_panel import DexPanel
 from ui.ui_overlay import scale_for_window
 from core.settings_controller import SettingsController, SettingsUpdate
 from core.vision_controller import VisionController
+from core.services import OcrServices, AppConfig
 
 log = logging.getLogger("shakechecker")
 
@@ -46,10 +46,20 @@ class AppController:
 
     def __init__(
         self,
+        *,
+        pool: ThreadPoolExecutor,
+        loc_pool: ThreadPoolExecutor,
+        ocr: OcrServices,
+        capture: WindowCapture,
+        battle_panel: BattlePanel,
+        settings_controller: SettingsController,
+        battle_controller: BattleController,
+        dex_controller: DexController,
+        vision_controller: VisionController,
+        config: AppConfig,
         species_override: dict | None,
         status_override: str | None,
         cal: Calibration,
-        battle_panel: BattlePanel,
         dex: DexSession | None = None,
         dex_panel: DexPanel | None = None,
     ) -> None:
@@ -59,53 +69,26 @@ class AppController:
         self.battle_panel = battle_panel
         self.dex = dex  # None if the dex data couldn't be loaded
         self.dex_panel = dex_panel  # overworld "missing here" overlay
-        self.balls = load_balls()
-        self.settings = Settings.load(USERDATA)  # which balls the overlay shows
-        self.status_rates = load_status_rates()
-        self.name_reader = None if species_override else NameReader(cal.name, SPECIES_PATH)
-        self.battle_text = BattleTextReader(cal.battle_text, TEMPLATES_DIR)
-        self.capture: WindowCapture | None = None
-        # The main thread runs the UI and frame capture; the slow AI runs here.
-        # Scale workers based on hardware to prevent UI lockups on low-end CPUs,
-        # while letting high-end rigs chew through OCR tasks instantly.
-        # (Cap at 4 since the app rarely queues more than 3 simultaneous tasks).
-        import os
-
-        cores = os.cpu_count() or 4
-        workers = max(1, min(4, cores - 2))
-
-        from concurrent.futures import ThreadPoolExecutor
-
-        self.pool = ThreadPoolExecutor(max_workers=workers)
-        self.loc_pool = ThreadPoolExecutor(max_workers=1)
+        self.settings = settings_controller.settings
+        self.capture = capture
+        
+        self.pool = pool
+        self.loc_pool = loc_pool
+        self.ocr = ocr
+        self.config = config
 
         self.state = AppState.WAITING
         self.hwnd: int | None = None
         self.last_seen_battle = 0.0
-        self.battle_controller = BattleController(
-            species_override,
-            status_override,
-            cal,
-            self.balls,
-            self.status_rates,
-            self.pool,
-        )
-        self.dex_controller = DexController(self.dex, self.loc_pool)
+        
+        self.battle_controller = battle_controller
+        self.dex_controller = dex_controller
         self.mode_override: str = "auto" if self.settings.auto_switch else "dex"
-        self.settings_controller = SettingsController(
-            settings=self.settings,
-            balls=self.balls,
-            get_region=lambda: self.dex.region if self.dex else None,
-            on_update=self._handle_settings_update
-        )
+        self.settings_controller = settings_controller
+        
         self.battle_panel.set_hidden_names(self.settings_controller.hidden_ball_names())
 
-        self.vision_controller = VisionController(
-            battle_text_reader=self.battle_text,
-            battle_reader_func=read_battle,
-            pool=self.pool,
-            cal=self.cal
-        )
+        self.vision_controller = vision_controller
 
         if self.dex_panel is not None:
             self.dex_panel.on_mode_toggle = self._on_mode_toggle
@@ -157,8 +140,6 @@ class AppController:
 
         def _load_ocr() -> None:
             ocr_engine.preload()
-            self.name_reader = NameReader(self.cal.name, SPECIES_PATH) if not self.species_override else None
-            self.battle_controller.set_name_reader(self.name_reader)
         self.pool.submit(_load_ocr)
         log.info("waiting for PokeMMO window...")
         QTimer.singleShot(0, self.step)
@@ -175,7 +156,7 @@ class AppController:
         QTimer.singleShot(int(interval_s * 1000), self.step)
 
     def _frame_interval(self) -> float:
-        return BATTLE_FRAME_S if self.state is AppState.BATTLE else IDLE_FRAME_S
+        return self.config.battle_frame_s if self.state is AppState.BATTLE else self.config.idle_frame_s
 
     def _apply_mode_change(self, log_msg: str) -> None:
         self.settings_controller.close()
@@ -284,10 +265,10 @@ class AppController:
         if self.state is AppState.WAITING:
             self.hwnd = find_pokemmo_hwnd()
             if self.hwnd is None:
-                return WAITING_POLL_S
+                return self.config.waiting_poll_s
             log.info("PokeMMO window found")
             self.state = AppState.IDLE
-            self.capture = WindowCapture(self.hwnd)
+            self.capture.hwnd = self.hwnd
             self._set_owner(self.battle_panel, self.hwnd)
             self._set_owner(self.dex_panel, self.hwnd)
 
@@ -312,16 +293,15 @@ class AppController:
                     self._set_owner(self.dex_panel, 0)
                     self.hwnd = None
                 if self.capture is not None:
-                    self.capture.close()
-                    self.capture = None
+                    self.capture.hwnd = 0
                 self.state = AppState.WAITING
                 self.battle_panel.hide_battle()
                 if self.dex_panel is not None:
                     self.dex_panel.hide_panel()
-            return WAITING_POLL_S
+            return self.config.waiting_poll_s
 
         if self.capture is None:
-            return WAITING_POLL_S
+            return self.config.waiting_poll_s
 
         frame = self.capture.grab(client_rect)
         if frame is None:
@@ -357,9 +337,9 @@ class AppController:
         grace = battle_end_grace(
             self.battle_controller._is_trainer if hasattr(self, "battle_controller") else False,
             ui_present,
-            trainer_s=TRAINER_END_GRACE_S,
-            anim_s=BATTLE_ANIM_GRACE_S,
-            normal_s=BATTLE_END_GRACE_S,
+            trainer_s=self.config.trainer_end_grace_s,
+            anim_s=self.config.battle_anim_grace_s,
+            normal_s=self.config.battle_end_grace_s,
         )
 
         if in_battle:

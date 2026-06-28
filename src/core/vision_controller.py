@@ -3,6 +3,8 @@ from typing import Any, Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 import numpy as np
 
+from core.services import OcrServices, AppConfig
+
 @dataclass
 class VisionUpdate:
     hud_present: bool
@@ -14,15 +16,18 @@ class VisionUpdate:
 class VisionController:
     def __init__(
         self,
-        battle_text_reader: Any,
+        *,
+        ocr: OcrServices,
         battle_reader_func: Callable,
         pool: ThreadPoolExecutor,
         cal: Any,
+        config: AppConfig,
     ):
-        self.battle_text = battle_text_reader
+        self.ocr = ocr
         self.read_battle = battle_reader_func
         self.pool = pool
         self.cal = cal
+        self.config = config
 
         self._bt_future: Future[Any] | None = None
         self._battle_future: Future[Any] | None = None
@@ -52,7 +57,7 @@ class VisionController:
 
         # 2. Submit new jobs
         if self._bt_future is None:
-            self._bt_future = self.pool.submit(self.battle_text.read, frame.copy())
+            self._bt_future = self.pool.submit(self.ocr.battle_text_reader.read, frame.copy())
 
         if needs_reading and getattr(self, "_battle_future", None) is None:
             # Blindly pass hint to the injected reader function
@@ -71,7 +76,7 @@ class VisionController:
             if hasattr(self._last_reading, 'bars'):
                 enemy_count = len(self._last_reading.bars)
             elif getattr(self._last_reading, 'is_horde', False):
-                enemy_count = 5
+                enemy_count = self.config.horde_enemy_count
 
         # Update and return raw vision data
         return VisionUpdate(

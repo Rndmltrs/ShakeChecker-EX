@@ -3,8 +3,8 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from core.account_store import AccountConfig, delete_account_data
-from core.app_state import USERDATA
 from core.settings_store import Settings
+from core.services import AppConfig
 from ui.settings_panel import SettingsPanel
 
 log = logging.getLogger("shakechecker")
@@ -31,13 +31,16 @@ class SettingsUpdate:
 class SettingsController:
     def __init__(
         self,
+        *,
         settings: Settings,
         balls: list[dict],
+        config: AppConfig,
         get_region: Callable[[], str | None],
         on_update: Callable[[SettingsUpdate], None],
     ):
         self.settings = settings
         self.balls = balls
+        self.config = config
         self.get_region = get_region
         self.on_update = on_update
         
@@ -77,19 +80,19 @@ class SettingsController:
 
     # --- Profile Logic ---
     def _get_profiles(self) -> tuple[str | None, list[str]]:
-        cfg = AccountConfig.load(USERDATA)
+        cfg = AccountConfig.load(self.config.userdata_path)
         return cfg.active, cfg.accounts
 
     def _on_choose_profile(self, name: str) -> None:
-        cfg = AccountConfig.load(USERDATA)
+        cfg = AccountConfig.load(self.config.userdata_path)
         account = cfg.use(name)
         log.info(f"dex: active account '{account}'")
         self.on_update(SettingsUpdate(new_profile=account, refresh_dex=True))
 
     def _on_remove_profile(self, name: str) -> None:
-        cfg = AccountConfig.load(USERDATA)
+        cfg = AccountConfig.load(self.config.userdata_path)
         cfg.delete(name)
-        delete_account_data(USERDATA, name)
+        delete_account_data(self.config.userdata_path, name)
         account = cfg.active or cfg.use("default")
         log.info(f"dex: deleted profile '{name}', active now '{account}'")
         self.on_update(SettingsUpdate(deleted_profile=account, refresh_dex=True))

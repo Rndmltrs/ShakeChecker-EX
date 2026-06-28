@@ -174,12 +174,64 @@ Data flows strictly in one direction from the game window to the UI layer.
 
 ## Dependency Injection & Testability
 
-ShakeChecker uses a lightweight Dependency Injection (DI) pattern to decouple the runtime loop from its services.
+ShakeChecker utilizes a strict Dependency Injection (DI) pattern with explicit keyword-only constructors to fully decouple the runtime loop and controllers from their services.
 
-- **The Rule:** The `AppController` must never instantiate heavy services (like `WindowCapture`, `BattlePanel`, or `DexSession`) internally. 
-- **The Practice:** In `app.py`'s `run()` function (the Composition Root), all services are built and then passed into the `AppController` constructor. 
-- **The Benefit:** This allows the application to be tested without spinning up Qt or connecting to a live game window. In tests, mock services can be injected into the controller to simulate full execution flows.
+- **The Rule:** Controllers (like `AppController`, `BattleController`, `DexController`, and `VisionController`) must NEVER instantiate services, trackers, thread pools, or configuration variables internally. Furthermore, controllers are strictly prohibited from importing global state constants.
+- **The Practice:** In `app.py`'s `run()` function (the Composition Root), the entire dependency graph is constructed. 
+  - Constants are loaded into an `AppConfig` struct.
+  - OCR readers are initialized and grouped into an `OcrServices` struct.
+  - Battle trackers (`TurnTracker`, `HpSettler`, etc.) are grouped into a `BattleServices` struct.
+  - These structs and explicit dependencies are then injected cleanly down the hierarchy via keyword-only arguments.
+- **The Benefit:** This guarantees absolute determinism and makes testing trivial. Test suites can instantiate a completely pure `BattleController` in less than a millisecond by passing it a dummy `AppConfig` and a `MockOcrServices` that returns synthetic text, allowing full pipeline simulations without ever launching Qt or a PokeMMO window.
 
+### Example: Mocking for Tests
+
+Because dependencies are explicit, you can instantiate a controller using mocks (like `unittest.mock.MagicMock` or simple dummy objects) to test its logic in isolation.
+
+```python
+from unittest.mock import MagicMock
+from core.services import AppConfig, OcrServices, BattleServices
+from battle.battle_controller import BattleController
+
+# 1. Create a dummy configuration
+test_config = AppConfig(
+    turn_down_guard_s=0.0,
+    battle_start_grace_s=0.0,
+    menu_stable_frames=1,
+    horde_enemy_count=5,
+    # ... fill other required floats/ints
+)
+
+# 2. Mock the heavy OCR readers
+mock_ocr = OcrServices(
+    name_reader=MagicMock(),
+    battle_text_reader=MagicMock(),
+    chat_reader=MagicMock()
+)
+
+# 3. Use real (but isolated) trackers
+test_services = BattleServices(
+    turns=TurnTracker(),
+    hp=HpSettler(),
+    status=StatusSettler(),
+    chain=CatchChain(),
+)
+
+# 4. Instantiate the Controller purely
+controller = BattleController(
+    species_override=None,
+    status_override=None,
+    cal=mock_calibration,
+    balls=mock_balls_list,
+    status_rates=mock_rates,
+    pool=MagicMock(), # Mock the thread pool
+    ocr=mock_ocr,
+    services=test_services,
+    config=test_config
+)
+
+# Now you can pass in synthetic frames and assert the outputs!
+```
 ## Configuration & Disk State
 
 ShakeChecker reads from static data and writes to dynamic local storage.

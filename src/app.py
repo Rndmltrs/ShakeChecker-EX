@@ -19,6 +19,8 @@ import argparse
 import io
 import logging
 import sys
+import os
+from concurrent.futures import ThreadPoolExecutor
 
 import win32api
 import win32con
@@ -28,13 +30,23 @@ from PyQt6.QtCore import qInstallMessageHandler
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication
 
-from battle.battle_log import read_turn_number
-from battle.battle_reader import BattleState, Calibration, load_calibration, read_battle
+from battle.battle_log import read_turn_number, AsyncChatReader
+from battle.battle_reader import BattleState, Calibration, load_calibration, read_battle, BattleTextReader
 from battle.catch_calc import ball_probs, battle_context, format_line, resolve_enemy
 from battle.name_reader import NameReader
+from battle.turn_tracker import TurnTracker
+from battle.hp_settler import HpSettler
+from battle.status_settler import StatusSettler
+from battle.catch_chain import CatchChain
+
 from core import paths
 from core.app_controller import AppController
-from core.app_state import SPECIES_PATH, load_balls, load_status_rates, lookup_species
+from core.app_state import (BATTLE_ANIM_GRACE_S, BATTLE_END_GRACE_S, BATTLE_FRAME_S, BATTLE_START_GRACE_S, DEX_LOC_INTERVAL_S, IDLE_FRAME_S, LOC_MASK_STABLE_S, MENU_STABLE_FRAMES, SPECIES_PATH, TEMPLATES_DIR, TRAINER_END_GRACE_S, TURN_DOWN_GUARD_S, USERDATA, WAITING_POLL_S, DEX_SHOWN_MAX, load_balls, load_status_rates, lookup_species)
+from core.services import AppConfig, OcrServices, BattleServices
+from core.settings_store import Settings
+from core.settings_controller import SettingsController
+from core.vision_controller import VisionController
+
 from core.window_capture import (
     WINDOW_TITLE,
     find_pokemmo_hwnd,
@@ -43,9 +55,13 @@ from core.window_capture import (
     iter_visible_windows,
     set_dpi_awareness,
     title_matches,
+    WindowCapture
 )
 from dex.dex_factory import build_dex_session
 from dex.location_reader import is_cave_location, read_location
+from dex.dex_controller import DexController
+from battle.battle_controller import BattleController
+
 from ui.battle_panel import BattlePanel
 from ui.dex_panel import DexPanel
 from ui.tray_menu import build_tray
@@ -166,17 +182,110 @@ def run(
     app.setWindowIcon(icon)
 
     dex = build_dex_session(account)
-    loop = AppController(
-        species_override, status_override, cal,
-        BattlePanel([b["name"] for b in load_balls()]),
-        dex=dex, dex_panel=DexPanel() if dex else None
+    
+    cores = os.cpu_count() or 4
+    workers = max(1, min(4, cores - 2))
+    pool = ThreadPoolExecutor(max_workers=workers)
+    loc_pool = ThreadPoolExecutor(max_workers=1)
+
+    config = AppConfig(
+        turn_down_guard_s=TURN_DOWN_GUARD_S,
+        battle_start_grace_s=BATTLE_START_GRACE_S,
+        menu_stable_frames=MENU_STABLE_FRAMES,
+        horde_enemy_count=5,
+        battle_anim_grace_s=BATTLE_ANIM_GRACE_S,
+        trainer_end_grace_s=TRAINER_END_GRACE_S,
+        battle_end_grace_s=BATTLE_END_GRACE_S,
+        dex_loc_interval_s=DEX_LOC_INTERVAL_S,
+        loc_mask_stable_s=LOC_MASK_STABLE_S,
+        idle_frame_s=IDLE_FRAME_S,
+        battle_frame_s=BATTLE_FRAME_S,
+        waiting_poll_s=WAITING_POLL_S,
+        dex_shown_max=DEX_SHOWN_MAX,
+        userdata_path=USERDATA,
     )
+    
+    ocr = OcrServices(
+        name_reader=None if species_override else NameReader(cal.name, SPECIES_PATH),
+        battle_text_reader=BattleTextReader(cal.battle_text, TEMPLATES_DIR),
+        chat_reader=AsyncChatReader(cal.chat)
+    )
+    
+    services = BattleServices(
+        turns=TurnTracker(),
+        hp=HpSettler(),
+        status=StatusSettler(),
+        chain=CatchChain(),
+    )
+    
+    balls = load_balls()
+    status_rates = load_status_rates()
+    settings = Settings.load(USERDATA)
+    settings_controller = SettingsController(
+        settings=settings,
+        balls=balls,
+        config=config,
+        get_region=lambda: dex.region if dex else None,
+        on_update=lambda x: None,
+    )
+    
+    battle_controller = BattleController(
+        species_override=species_override,
+        status_override=status_override,
+        cal=cal,
+        balls=balls,
+        status_rates=status_rates,
+        pool=pool,
+        ocr=ocr,
+        services=services,
+        config=config,
+    )
+    
+    dex_controller = DexController(
+        dex_session=dex,
+        loc_pool=loc_pool,
+        config=config,
+    )
+    
+    vision_controller = VisionController(
+        ocr=ocr,
+        battle_reader_func=read_battle,
+        pool=pool,
+        cal=cal,
+        config=config,
+    )
+    
+    capture = WindowCapture(0)
+    
+    battle_panel = BattlePanel([b["name"] for b in balls])
+    dex_panel = DexPanel() if dex else None
+    
+    loop = AppController(
+        pool=pool,
+        loc_pool=loc_pool,
+        ocr=ocr,
+        capture=capture,
+        battle_panel=battle_panel,
+        settings_controller=settings_controller,
+        battle_controller=battle_controller,
+        dex_controller=dex_controller,
+        vision_controller=vision_controller,
+        config=config,
+        species_override=species_override,
+        status_override=status_override,
+        cal=cal,
+        dex=dex,
+        dex_panel=dex_panel,
+    )
+    
+    settings_controller.on_update = loop._handle_settings_update
+
     tray = build_tray(icon, app.quit, paths.APP_VERSION)
     loop.start()
     try:
         code = app.exec()
     finally:
-        loop.chat.shutdown()
+        loop.ocr.chat_reader.shutdown()
     sys.exit(code)
 
 
