@@ -41,6 +41,7 @@ class BattleUpdate:
     log_line: str | None
     is_multi: bool
     panel_state: dict[str, Any] | None
+    is_loading: bool = False
 
 
 class BattleController:
@@ -128,7 +129,11 @@ class BattleController:
 
         if reading is None or bt is None:
             return BattleUpdate(
-                caught_species_id=None, log_line=None, is_multi=False, panel_state=None
+                caught_species_id=None,
+                log_line=None,
+                is_multi=False,
+                panel_state=None,
+                is_loading=(self._name_future is not None) or (not self._trainer_decided),
             )
 
         if reading.is_horde or f.enemy_count > 1:
@@ -139,6 +144,7 @@ class BattleController:
             log_line=None,
             is_multi=False,
             panel_state=None,
+            is_loading=(self._name_future is not None) or (not self._trainer_decided),
         )
 
         if not self._loc_read:

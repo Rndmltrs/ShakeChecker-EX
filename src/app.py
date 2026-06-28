@@ -332,7 +332,7 @@ def run(
 
     settings_controller.on_update = loop._handle_settings_update
 
-    build_tray(icon, app.quit, paths.APP_VERSION)
+    _tray = build_tray(icon, app.quit, paths.APP_VERSION)
     loop.start()
     try:
         code = app.exec()

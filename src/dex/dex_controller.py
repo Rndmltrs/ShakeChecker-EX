@@ -70,7 +70,7 @@ class DexController:
             self.dex.set_caught(CaughtStore.for_account(self.config.userdata_path, account))
 
     def step(self, frame: DexFrame) -> DexUpdate:
-        if frame.in_battle or self.dex is None:
+        if self.dex is None:
             return self._step_build_update()
 
         mask = location_reader.extract_location_mask(frame.hud_crop)

@@ -3,12 +3,13 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont, QFontMetrics, QPixmap
+from PyQt6.QtCore import Qt, QTimer, QSize
+from PyQt6.QtGui import QFont, QFontMetrics, QPixmap, QIcon, QTransform
 from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QPushButton,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
@@ -18,6 +19,61 @@ from ui.sprite_loader import SpriteLoader
 from ui.ui_theme import get_global_stylesheet, prob_color_hex, rarity_color_hex
 
 ANIMATE_SPRITES = True  # Toggle animated GIFs for the Dex Panel (False saves CPU)
+
+
+class SpinnerButton(QPushButton):
+    def __init__(self, size: int) -> None:
+        super().__init__()
+        self._size = size
+        self._is_loading = False
+        self._angle = 0
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._rotate)
+        self._timer.setInterval(50)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setStyleSheet("border: none; background: transparent; color: #cfd2d6;")
+        self._update_icon()
+
+    def set_loading(self, loading: bool) -> None:
+        if loading == self._is_loading:
+            return
+        self._is_loading = loading
+        if loading:
+            self._timer.start()
+            self.setEnabled(False)
+        else:
+            self._timer.stop()
+            self._angle = 0
+            self.setEnabled(True)
+            self._update_icon()
+
+    def set_size(self, size: int) -> None:
+        if self._size == size:
+            return
+        self._size = size
+        self._update_icon()
+
+    def _rotate(self) -> None:
+        self._angle = (self._angle + 30) % 360
+        self._update_icon()
+
+    def _update_icon(self) -> None:
+        from ui.ui_icons import icon_pixmap
+
+        pm = icon_pixmap("refresh", self._size, "#cfd2d6")
+        if self._is_loading and self._angle != 0:
+            t = (
+                QTransform()
+                .translate(self._size / 2, self._size / 2)
+                .rotate(self._angle)
+                .translate(-self._size / 2, -self._size / 2)
+            )
+            pm = pm.transformed(t, Qt.TransformationMode.SmoothTransformation)
+        self.setIcon(QIcon(pm))
+        self.setIconSize(QSize(self._size, self._size))
+        self.setFixedSize(self._size + 6, self._size + 6)
+
+
 
 
 class BattleBallRow(QWidget):

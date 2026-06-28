@@ -78,6 +78,7 @@ function Invoke-Bootstrap {
 
     if (-not $pyFound) {
         Write-Host "`n  Python not found on system. Please install Python 3.11+." -ForegroundColor Red
+        Write-Host "  Download from: https://www.python.org/downloads/windows/" -ForegroundColor Yellow
         Pause
         return $false
     }
@@ -523,7 +524,7 @@ while ($true) {
         '8' {
             Clear-Host
             Write-Host "`n  Cleaning environment..." -ForegroundColor Cyan
-            $targets = @("build", "dist", ".pytest_cache", ".ruff_cache", ".mypy_cache", ".pycache")
+            $targets = @("build", "dist", ".pytest_cache", ".ruff_cache", ".mypy_cache", ".pycache", "src\*.egg-info")
             
             if (Test-Path ".venv") {
                 $delVenv = Read-Host "  Do you want to completely remove the virtual environment? (Y/N)"

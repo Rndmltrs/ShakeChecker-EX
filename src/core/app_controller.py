@@ -109,6 +109,7 @@ class AppController:
         self.battle_panel.get_ball_state = self.settings_controller.ball_state
         self.battle_panel.on_toggle_ball = self.settings_controller.toggle_ball
         self.battle_panel.on_set_all_balls = self.settings_controller.set_all_balls
+        self.battle_panel.on_force_refresh = self._force_refresh_battle
         self.settings_controller.panel.on_dump_debug = self._on_dump_debug
 
         self._last_hud = ""  # last resolved HUD location (drives dex panel refresh)
@@ -127,6 +128,7 @@ class AppController:
 
         if self.dex_panel is not None and self.dex is not None:
             self.dex_panel.on_toggle_caught = self._dex_toggle_caught
+            self.dex_panel.on_force_refresh = self._force_refresh_loc
             self.dex_panel.get_keep_caught = lambda: self.settings.keep_caught
             self.dex_panel.get_click_to_catch = lambda: self.settings.click_to_catch
 
@@ -364,6 +366,8 @@ class AppController:
             self.last_seen_battle = now
             if self.state is not AppState.BATTLE:
                 self.state = AppState.BATTLE
+                if self.settings.auto_switch:
+                    self.mode_override = "auto"
                 log.info("battle detected")
                 self.battle_controller.reset(now)
                 if self.dex_panel is not None:
@@ -395,12 +399,14 @@ class AppController:
             ):
                 log.info("dex: recorded OT-caught from UI")
 
-            if self.mode_override != "dex" and update.panel_state is not None:
-                self.battle_panel.apply_scale(
-                    self.settings.battle_scale or scale_for_window(client_rect.height)
-                )
-                self.battle_panel.show_battle(**update.panel_state)
-                self.battle_panel.dock_to(client_rect.left, client_rect.top, client_rect.width)
+            if self.mode_override != "dex":
+                self.battle_panel.set_loading(update.is_loading)
+                if update.panel_state is not None:
+                    self.battle_panel.apply_scale(
+                        self.settings.battle_scale or scale_for_window(client_rect.height)
+                    )
+                    self.battle_panel.show_battle(**update.panel_state)
+                    self.battle_panel.dock_to(client_rect.left, client_rect.top, client_rect.width)
         elif self.state is AppState.BATTLE and now - self.last_seen_battle <= grace:
             # In a battle but no battle signal this frame (animation gap). Log what
             # dropped out so a false "battle ended" can be diagnosed: which signal
@@ -417,6 +423,8 @@ class AppController:
             )
         elif self.state is AppState.BATTLE and now - self.last_seen_battle > grace:
             self.state = AppState.IDLE
+            if self.settings.auto_switch:
+                self.mode_override = "auto"
             self.last_line = ""
             if (
                 not self.battle_controller._caught_printed
@@ -452,7 +460,7 @@ class AppController:
         # Walking around (not in battle): refresh the "missing here" dex panel from
         # the HUD location on a throttle (location OCR is slow, location changes
         # slowly). Skipped during battles, where the location is read once instead.
-        if not in_battle and self.dex is not None:
+        if self.dex is not None:
             h, w = frame.shape[:2]
             y1 = (
                 int(self.cal.location.top)
@@ -604,3 +612,18 @@ class AppController:
         now = self.dex.toggle_caught(dex_id)
         log.info(f"dex: {'marked' if now else 'un-marked'} #{dex_id} as caught")
         self._refresh_dex_panel()
+    def _force_refresh_loc(self) -> None:
+        if hasattr(self, "dex_controller"):
+            self.dex_controller._last_hud = ""
+            self.dex_controller._last_loc_mask = None
+        self._last_hud = ""
+        self._last_loc_mask = None
+        log.info("Forced location refresh via Dex panel")
+
+    def _force_refresh_battle(self) -> None:
+        self._was_horde = False
+        self._loc_read = False
+        if hasattr(self, "battle_controller"):
+            self.battle_controller.cached = None
+            self.battle_controller._trainer_decided = False
+        log.info("Forced battle state refresh via Battle panel")

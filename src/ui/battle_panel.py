@@ -116,11 +116,16 @@ class BattlePanel(BaseOverlay):
         self.get_ball_state: Callable[[], tuple[list[tuple[str, str]], set[str]]] | None = None
         self.on_toggle_ball: Callable[[str], None] | None = None
         self.on_set_all_balls: Callable[[bool], None] | None = None
+        self.on_force_refresh: Callable[[], None] | None = None
         self._balls: QWidget | None = None
 
         self._sprite_h = BASE_SPRITE_H
         self._level_px = BASE_LEVEL_PX
         self._init_header()
+
+    def _on_refresh_clicked(self) -> None:
+        if self.on_force_refresh:
+            self.on_force_refresh()
 
     def setup_middle_btn(self) -> None:
         self._balls_btn = self._add_header_btn("Select Pokeballs to show", self._on_balls_click)
@@ -145,8 +150,14 @@ class BattlePanel(BaseOverlay):
         self._name.setObjectName("PrimaryText")
         self._status = QLabel()
         self._status.setVisible(False)
+
+        from ui.ui_components import SpinnerButton
+        self._refresh_btn = SpinnerButton(15)
+        self._refresh_btn.clicked.connect(self._on_refresh_clicked)
+
         self._header.addWidget(self._sprite)
         self._header.addWidget(self._name, 1)
+        self._header.addWidget(self._refresh_btn)
         self._header.addWidget(self._status)
         self._header.setContentsMargins(0, 0, 0, 0)
         self._col.addLayout(self._header)
@@ -239,6 +250,7 @@ class BattlePanel(BaseOverlay):
         self._scale_icon_btn(self._mode_btn, "swords", isz)
         self._scale_icon_btn(self._balls_btn, "ball", isz)
         self._scale_icon_btn(self._settings_btn, "gear", isz)
+        self._refresh_btn.set_size(isz)
 
         self._col.setContentsMargins(
             px(BASE_MARGIN_X), px(BASE_MARGIN_Y), px(BASE_MARGIN_X), px(BASE_MARGIN_Y)
@@ -255,6 +267,10 @@ class BattlePanel(BaseOverlay):
         self.adjustSize()
         self._last_pos = None
         self._last_order = None  # row heights changed -> recompute the fixed height
+
+    def set_loading(self, is_loading: bool) -> None:
+        """Show a spinner on the refresh button while OCR is running."""
+        self._refresh_btn.set_loading(is_loading)
 
     def show_battle(
         self,

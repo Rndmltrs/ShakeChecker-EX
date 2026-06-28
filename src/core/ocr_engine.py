@@ -53,7 +53,18 @@ _csv_path = Path("logs/ocr_performance.csv")
 
 def _log_performance(task: str, duration: float, size: tuple[int, ...]):
     try:
-        write_header = not _csv_path.exists()
+        lines = []
+        if _csv_path.exists():
+            with open(_csv_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+        
+        # Keep header + last 99 entries
+        if len(lines) >= 100:
+            lines = [lines[0]] + lines[-98:]
+            with open(_csv_path, "w", newline="", encoding="utf-8") as f:
+                f.writelines(lines)
+                
+        write_header = len(lines) == 0
         _csv_path.parent.mkdir(parents=True, exist_ok=True)
         with open(_csv_path, "a", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)

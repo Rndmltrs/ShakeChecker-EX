@@ -1,12 +1,12 @@
 import math
 
-from PyQt6.QtCore import QPointF, Qt
+from PyQt6.QtCore import QPointF, Qt, QRectF
 from PyQt6.QtGui import QColor, QPainter, QPen, QPixmap
 
 
 def icon_pixmap(kind: str, size: int, color: str) -> QPixmap:
     """A small monochrome header icon drawn in the overlay's own colour (so it
-    matches the panel instead of an OS emoji): 'gear', 'ball', 'swords', 'book', or 'info'."""
+    matches the panel instead of an OS emoji): 'gear', 'ball', 'swords', 'book', 'refresh', or 'info'."""
     pm = QPixmap(size, size)
     pm.fill(Qt.GlobalColor.transparent)
     p = QPainter(pm)
@@ -56,10 +56,39 @@ def icon_pixmap(kind: str, size: int, color: str) -> QPixmap:
         )
         p.drawLine(QPointF(cx + size * 0.35, cy - size * 0.2), QPointF(cx, cy - size * 0.1))
         p.drawLine(QPointF(cx + size * 0.35, cy + size * 0.2), QPointF(cx, cy + size * 0.3))
-        p.drawLine(
-            QPointF(cx + size * 0.35, cy - size * 0.2), QPointF(cx + size * 0.35, cy + size * 0.2)
-        )
+        p.drawLine(QPointF(cx + size * 0.35, cy - size * 0.2), QPointF(cx + size * 0.35, cy + size * 0.2))
         p.drawLine(QPointF(cx, cy - size * 0.1), QPointF(cx, cy + size * 0.3))
+    elif kind == "refresh":
+        ring = QPen(c, size * 0.12, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
+        p.setPen(ring)
+        r = size * 0.32
+        rect = QRectF(cx - r, cy - r, r * 2, r * 2)
+        # drawArc span angle is in 1/16ths. Positive = counter-clockwise.
+        # Arc 1: start at 15 deg (bottom-right), span 120 (to top-left 135 deg)
+        p.drawArc(rect, int(15 * 16), int(120 * 16))
+        # Arc 2: start at 195 deg (top-left), span 120 (to bottom-right 315 deg)
+        p.drawArc(rect, int(195 * 16), int(120 * 16))
+        
+        # Arrow heads
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(c)
+        from PyQt6.QtGui import QPolygonF
+        # Arrow 1 at 135 deg (end of arc 1). Tangent points down-left (225 deg).
+        a1_x, a1_y = cx + math.cos(math.radians(135)) * r, cy - math.sin(math.radians(135)) * r
+        poly1 = QPolygonF([
+            QPointF(a1_x, a1_y),
+            QPointF(a1_x + size * 0.15, a1_y - size * 0.05),
+            QPointF(a1_x + size * 0.05, a1_y + size * 0.15)
+        ])
+        p.drawPolygon(poly1)
+        # Arrow 2 at 315 deg (end of arc 2). Tangent points up-right (45 deg).
+        a2_x, a2_y = cx + math.cos(math.radians(315)) * r, cy - math.sin(math.radians(315)) * r
+        poly2 = QPolygonF([
+            QPointF(a2_x, a2_y),
+            QPointF(a2_x - size * 0.15, a2_y + size * 0.05),
+            QPointF(a2_x - size * 0.05, a2_y - size * 0.15)
+        ])
+        p.drawPolygon(poly2)
     else:  # info
         p.setPen(QPen(c, size * 0.10))
         p.drawEllipse(QPointF(cx, cy), size * 0.42, size * 0.42)

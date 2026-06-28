@@ -28,6 +28,7 @@ from PyQt6.QtGui import QFontMetrics
 from PyQt6.QtWidgets import (
     QApplication,
     QFrame,
+    QHBoxLayout,
     QLabel,
     QScrollArea,
     QSizePolicy,
@@ -97,18 +98,33 @@ class DexPanel(BaseOverlay):
         self.on_toggle_caught: Callable[[int], None] | None = None
         self.get_keep_caught: Callable[[], bool] | None = None
         self.get_click_to_catch: Callable[[], bool] | None = None
+        self.on_force_refresh: Callable[[], None] | None = None
 
         self._init_dex()
+
+    def _on_refresh_clicked(self) -> None:
+        if self.on_force_refresh:
+            self.on_force_refresh()
 
     def setup_middle_btn(self) -> None:
         self._info_btn = self._add_header_btn("Rarity colour legend", self._toggle_legend)
 
     def _init_dex(self) -> None:
 
+        self._title_layout = QHBoxLayout()
+        self._title_layout.setContentsMargins(0, 0, 0, 0)
         self._title = QLabel(" ")
         self._title.setObjectName("PrimaryText")
         self._title.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        self._col.addWidget(self._title)
+        self._title_layout.addWidget(self._title, 1)
+
+        from ui.ui_components import SpinnerButton
+
+        self._refresh_btn = SpinnerButton(BASE_ICON_PX)
+        self._refresh_btn.clicked.connect(self._on_refresh_clicked)
+        self._title_layout.addWidget(self._refresh_btn)
+
+        self._col.addLayout(self._title_layout)
 
         self._subtitle = QLabel(" ")
         self._subtitle.setObjectName("SecondaryText")
@@ -166,6 +182,7 @@ class DexPanel(BaseOverlay):
         self._scale_icon_btn(self._mode_btn, "book", isz)
         self._scale_icon_btn(self._settings_btn, "gear", isz)
         self._scale_icon_btn(self._info_btn, "info", isz)
+        self._refresh_btn.set_size(isz)
         self._col.setContentsMargins(
             self._px(BASE_MARGIN_X),
             self._px(BASE_MARGIN_Y),
@@ -191,14 +208,7 @@ class DexPanel(BaseOverlay):
 
         title_text = view.route if view.route == "ShakeChecker" else view.route.title()
         self._current_title_text = title_text
-        if getattr(self, "_is_loading", False):
-            import time
-
-            spinners = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-            spinner = spinners[int(time.time() * 15) % len(spinners)]
-            self._title.setText(f"{title_text} <span style='color:#888;'>{spinner}</span>")
-        else:
-            self._title.setText(title_text)
+        self._title.setText(title_text)
 
         if view.route == "ShakeChecker":
             self._subtitle.setText(view.region.title())
@@ -247,17 +257,9 @@ class DexPanel(BaseOverlay):
         self.show()
 
     def set_loading(self, is_loading: bool) -> None:
-        """Show a small spinner next to the title while OCR is running."""
+        """Show a spinner on the refresh button while OCR is running."""
         self._is_loading = is_loading
-        title = getattr(self, "_current_title_text", self._title.text())
-        if is_loading:
-            import time
-
-            spinners = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-            spinner = spinners[int(time.time() * 15) % len(spinners)]
-            self._title.setText(f"{title} <span style='color:#888;'>{spinner}</span>")
-        else:
-            self._title.setText(title)
+        self._refresh_btn.set_loading(is_loading)
 
     def hide_panel(self) -> None:
         self._hide_popups()
