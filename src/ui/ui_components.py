@@ -60,15 +60,7 @@ class SpinnerButton(QPushButton):
     def _update_icon(self) -> None:
         from ui.ui_icons import icon_pixmap
 
-        pm = icon_pixmap("refresh", self._size, "#cfd2d6")
-        if self._is_loading and self._angle != 0:
-            t = (
-                QTransform()
-                .translate(self._size / 2, self._size / 2)
-                .rotate(self._angle)
-                .translate(-self._size / 2, -self._size / 2)
-            )
-            pm = pm.transformed(t, Qt.TransformationMode.SmoothTransformation)
+        pm = icon_pixmap("refresh", self._size, "#cfd2d6", angle=self._angle if self._is_loading else 0)
         self.setIcon(QIcon(pm))
         self.setIconSize(QSize(self._size, self._size))
         self.setFixedSize(self._size + 6, self._size + 6)

@@ -4,7 +4,7 @@ from PyQt6.QtCore import QPointF, QRectF, Qt
 from PyQt6.QtGui import QColor, QPainter, QPen, QPixmap
 
 
-def icon_pixmap(kind: str, size: int, color: str) -> QPixmap:
+def icon_pixmap(kind: str, size: int, color: str, angle: float = 0) -> QPixmap:
     """A small monochrome header icon drawn in the overlay's own colour (so it
     matches the panel instead of an OS emoji): 'gear', 'ball', 'swords', 'book',
     'refresh', or 'info'."""
@@ -62,14 +62,15 @@ def icon_pixmap(kind: str, size: int, color: str) -> QPixmap:
         )
         p.drawLine(QPointF(cx, cy - size * 0.1), QPointF(cx, cy + size * 0.3))
     elif kind == "refresh":
+        p.translate(cx, cy)
+        p.rotate(angle)
+        p.translate(-cx, -cy)
+        
         ring = QPen(c, size * 0.12, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
         p.setPen(ring)
         r = size * 0.32
         rect = QRectF(cx - r, cy - r, r * 2, r * 2)
-        # drawArc span angle is in 1/16ths. Positive = counter-clockwise.
-        # Arc 1: start at 15 deg (bottom-right), span 120 (to top-left 135 deg)
         p.drawArc(rect, 15 * 16, 120 * 16)
-        # Arc 2: start at 195 deg (top-left), span 120 (to bottom-right 315 deg)
         p.drawArc(rect, 195 * 16, 120 * 16)
 
         # Arrow heads

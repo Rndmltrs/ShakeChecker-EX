@@ -59,6 +59,10 @@ class DexController:
         """Force the next overworld frame to re-evaluate location."""
         self._last_loc_check = 0.0
 
+    def force_refresh(self) -> None:
+        self._last_hud = ""
+        self._last_loc_mask = None
+
     def override_region(self, region: str | None) -> None:
         if self.dex is not None:
             self.dex.seed_region(region)

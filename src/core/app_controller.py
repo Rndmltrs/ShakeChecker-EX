@@ -635,8 +635,7 @@ class AppController:
 
     def _force_refresh_loc(self) -> None:
         if hasattr(self, "dex_controller"):
-            self.dex_controller._last_hud = ""
-            self.dex_controller._last_loc_mask = None
+            self.dex_controller.force_refresh()
         self._last_hud = ""
         self._last_loc_mask = None
         log.info("Forced location refresh via Dex panel")
@@ -645,6 +644,5 @@ class AppController:
         self._was_horde = False
         self._loc_read = False
         if hasattr(self, "battle_controller"):
-            self.battle_controller.cached = None
-            self.battle_controller._trainer_decided = False
+            self.battle_controller.force_refresh()
         log.info("Forced battle state refresh via Battle panel")

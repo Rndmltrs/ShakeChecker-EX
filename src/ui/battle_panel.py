@@ -318,7 +318,7 @@ class BattlePanel(BaseOverlay):
                 self._sub.setText(subheader_text(catch_rate, turn))
             self._hp.setText(f"HP: {hp_pct:.0f}%" if hp_pct is not None else "")
             self._set_status(status)
-        if is_trainer or is_empty:
+        if is_trainer or is_empty or not probs:
             order = []
         else:
             for name, row in self._ball_rows.items():

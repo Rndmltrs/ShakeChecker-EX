@@ -93,6 +93,10 @@ class BattleController:
         self._last_chat_submit = 0.0
         self._battle_start = 0.0
 
+    def force_refresh(self) -> None:
+        self.cached = None
+        self._trainer_decided = False
+        
     def reset(self, now: float) -> None:
         self.cached = None
         self._name_future = None
