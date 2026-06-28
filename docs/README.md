@@ -15,7 +15,7 @@
 ---
 
 ### Advanced Developer Launcher
-This fork includes a custom, standalone PowerShell bootstrap launcher (`launcher.ps1`) designed from the ground up to provide a frictionless experience for both players and developers. By executing the application purely from source, the launcher bypasses compiled executables, ensuring zero false-positives while maintaining a completely transparent environment.
+This fork includes a custom, standalone PowerShell bootstrap launcher (`launcher.ps1`) designed from the ground up to provide a frictionless experience for both users and developers. By executing the application purely from source, the launcher bypasses compiled executables, ensuring zero false-positives while maintaining a completely transparent environment.
 
 Beyond just starting the app, the launcher acts as a fully integrated environment manager and developer toolkit. Features include:
 
