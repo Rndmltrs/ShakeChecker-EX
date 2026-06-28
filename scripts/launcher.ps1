@@ -183,7 +183,7 @@ function Invoke-Bootstrap {
             
             $installLog = Join-Path $env:TEMP "pip_install_$([guid]::NewGuid()).log"
             $installErr = Join-Path $env:TEMP "pip_install_err_$([guid]::NewGuid()).log"
-            $procInstall = Start-Process -FilePath ".\.venv\Scripts\uv.exe" -ArgumentList "pip install --python .\.venv -e `".[dev]`"" -WindowStyle Hidden -RedirectStandardOutput $installLog -RedirectStandardError $installErr -PassThru
+            $procInstall = Start-Process -FilePath ".\.venv\Scripts\uv.exe" -ArgumentList "pip install --python .\.venv -e `".[dev,build]`"" -WindowStyle Hidden -RedirectStandardOutput $installLog -RedirectStandardError $installErr -PassThru
             
             while (-not $procInstall.HasExited) {
                 Write-Host "`r  $($spinners[$i]) Installing dependencies...    " -NoNewline -ForegroundColor Yellow
@@ -307,13 +307,16 @@ function Invoke-Task {
 # ==============================================================================
 function Show-Menu {
     Show-Header
+    Write-Host "  --- Application ---" -ForegroundColor Yellow
     Write-Host "  [1] Start Application" -ForegroundColor White
     Write-Host "  [2] Advanced Run (Custom Arguments)" -ForegroundColor Cyan
-    Write-Host "  [3] Embedded Terminal" -ForegroundColor White
-    Write-Host "  [4] Ruff (Check --fix & Format)" -ForegroundColor Gray
-    Write-Host "  [5] mypy" -ForegroundColor Gray
-    Write-Host "  [6] pytest" -ForegroundColor Gray
-    Write-Host "  [7] Build Application" -ForegroundColor Gray
+    Write-Host "  [3] Build Executable (.exe)" -ForegroundColor White
+    Write-Host ""
+    Write-Host "  --- Development & Tools ---" -ForegroundColor Yellow
+    Write-Host "  [4] Embedded Terminal" -ForegroundColor Gray
+    Write-Host "  [5] Ruff (Check --fix & Format)" -ForegroundColor Gray
+    Write-Host "  [6] Type Checking (mypy)" -ForegroundColor Gray
+    Write-Host "  [7] Unit Tests (pytest)" -ForegroundColor Gray
     Write-Host "  [8] Clean Environment" -ForegroundColor Gray
     Write-Host ""
     Write-Host "  [Q] Quit" -ForegroundColor DarkRed
@@ -446,25 +449,6 @@ while ($true) {
             if ($userArgs) { Invoke-PythonApp -ArgsString $userArgs }
         }
         '3' {
-            Invoke-Terminal 
-        }
-        '4' {
-            Clear-Host
-            Invoke-Task "Ruff Check" { ruff check --fix . }
-            Invoke-Task "Ruff Format" { ruff format . }
-            Pause
-        }
-        '5' {
-            Clear-Host
-            Invoke-Task "mypy" { mypy . }
-            Pause
-        }
-        '6' {
-            Clear-Host
-            Invoke-Task "pytest" { pytest }
-            Pause
-        }
-        '7' {
             Clear-Host
             Write-Host "`n  Build Application" -ForegroundColor Cyan
             Write-Host "  ----------------------------------------" -ForegroundColor DarkGray
@@ -513,8 +497,27 @@ while ($true) {
                 Write-Host "  Output: dist/ShakeChecker/" -ForegroundColor Yellow
             }
             catch {
-                Write-Host "  Build failed." -ForegroundColor Red
+                Write-Host "  Build failed: $_" -ForegroundColor Red
             }
+            Pause
+        }
+        '4' {
+            Invoke-Terminal 
+        }
+        '5' {
+            Clear-Host
+            Invoke-Task "Ruff Check" { ruff check --fix . }
+            Invoke-Task "Ruff Format" { ruff format . }
+            Pause
+        }
+        '6' {
+            Clear-Host
+            Invoke-Task "mypy" { mypy . }
+            Pause
+        }
+        '7' {
+            Clear-Host
+            Invoke-Task "pytest" { pytest }
             Pause
         }
         '8' {

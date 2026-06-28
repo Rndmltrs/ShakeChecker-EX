@@ -33,7 +33,7 @@ a = Analysis(
     hiddenimports=hiddenimports,
     hookspath=[],
     runtime_hooks=[],
-    excludes=["tkinter"],  # unused; trims size
+    excludes=["tkinter", "onnx", "onnxruntime.quantization"],  # unused; trims size and suppresses warnings
     noarchive=False,
 )
 pyz = PYZ(a.pure)
@@ -45,7 +45,7 @@ exe = EXE(
     exclude_binaries=True,
     name="ShakeChecker",
     console=False,  # windowless: overlay only, no console (set True to see the live log)
-    icon="assets/shakechecker.ico",
+    icon="data/shakechecker.ico",
 )
 coll = COLLECT(
     exe,
