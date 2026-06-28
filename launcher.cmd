@@ -1,20 +1,81 @@
+<# : 2>NUL
+@echo off
+PUSHD "%~dp0"
+set "PS=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
+WHERE pwsh >NUL 2>&1 && set "PS=pwsh"
+%PS% -NoProfile -ExecutionPolicy Bypass -Command "& ([ScriptBlock]::Create((Get-Content '%~f0' -Raw -Encoding UTF8)))" & POPD & EXIT /B
+#>
 # ==============================================================================
 # ShakeChecker Development Launcher
 # ------------------------------------------------------------------------------
-# This script initializes the development environment for ShakeChecker, a
-# real‑time Pokémon catch‑probability overlay. It validates Python, activates
-# the virtual environment, ensures dependencies are installed, and provides a
-# menu for running the app, testing, linting, and building the executable.
+# Note: This file is a "Polyglot" script (a Batch script AND a PowerShell script).
+# 
+# How it works:
+#   1. When executed, Windows CMD runs the first line. 
+#   2. CMD fails to execute `<#` (throwing a silent error due to `2>NUL`), then 
+#      turns off echoing (`@echo off`), sets the working directory, and checks 
+#      if PowerShell 7 (`pwsh`) is installed. It then launches the chosen 
+#      PowerShell to dynamically read and execute this exact file (`%~f0`) 
+#      with the execution policy bypassed. Finally, it exits.
+#   3. When PowerShell reads the file, it treats everything between `<#` and `#>`
+#      as a multi-line block comment, completely ignoring the batch commands!
+#      `-Encoding UTF8` ensures special UI characters render correctly.
+#
+# This allows users to double-click the .cmd file and seamlessly launch a 
+# PowerShell environment without facing any security or execution policy blocks!
+# ------------------------------------------------------------------------------
+# This script initializes the development environment for ShakeChecker.
+# It validates Python, activates the virtual environment, installs dependencies, 
+# and provides a menu for running the app, testing, linting, and building.
 # ==============================================================================
 
 $ErrorActionPreference = "Stop"
-Set-Location -Path $PSScriptRoot
-$env:PYTHONPYCACHEPREFIX = Join-Path $PSScriptRoot ".pycache"
+Set-Location -Path $PWD.Path
+$env:PYTHONPYCACHEPREFIX = Join-Path $PWD.Path ".pycache"
+$env:PYTHONIOENCODING = "utf-8"
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+
+# ==============================================================================
+# HEADER
+# ==============================================================================
+function Show-Header {
+    param([switch]$IsInstaller)
+    Clear-Host
+    Write-Host ""
+    Write-Host "    ███████╗██╗  ██╗ █████╗ ██╗  ██╗███████╗ " -ForegroundColor Red
+    Write-Host "    ██╔════╝██║  ██║██╔══██╗██║ ██╔╝██╔════╝ " -ForegroundColor Red
+    Write-Host "    ███████╗███████║███████║█████═╝ █████╗   " -ForegroundColor Red
+    Write-Host "    ╚════██║██╔══██║██╔══██║██╔═██╗ ██╔══╝   " -ForegroundColor DarkGray
+    Write-Host "    ███████║██║  ██║██║  ██║██║  ██╗███████╗ " -ForegroundColor White
+    Write-Host "    ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝ " -ForegroundColor White
+    Write-Host "          C H E C K E R   V 1 . 2 . 0        " -ForegroundColor DarkGray
+    Write-Host ""
+    if ($IsInstaller) {
+        Write-Host "    [System Initialization & Installer]" -ForegroundColor Cyan
+    } else {
+        Write-Host "    [Environment: Active]" -ForegroundColor Green
+    }
+    Write-Host "    ----------------------------------------" -ForegroundColor DarkGray
+}
 
 # ==============================================================================
 # ENVIRONMENT BOOTSTRAP
+# ------------------------------------------------------------------------------
+# Core initialization routine. Handles:
+# 1. Validating Python 3.11+ is installed in PATH
+# 2. Creating the .venv virtual environment if it doesn't exist
+# 3. Checking if dependencies are already satisfied via test import
+# 4. Bootstrapping 'uv' (Rust-based ultra-fast package installer)
+# 5. Executing concurrent high-speed dependency installations with visual spinners
 # ==============================================================================
 function Invoke-Bootstrap {
+    Show-Header -IsInstaller
+    $isFreshInstall = $false
+    
+    # --------------------------------------------------------------------------
+    # Python Version Validation
+    # --------------------------------------------------------------------------
     Write-Host "`n  Checking Python..." -ForegroundColor DarkGray
 
     try {
@@ -32,6 +93,9 @@ function Invoke-Bootstrap {
         return $false
     }
 
+    # --------------------------------------------------------------------------
+    # Virtual Environment Setup
+    # --------------------------------------------------------------------------
     if (-not (Test-Path ".\.venv\Scripts\Activate.ps1")) {
         Write-Host "`n  No virtual environment found. A clean installation is required." -ForegroundColor Cyan
         $confirm = Read-Host "  Do you want to create a virtual environment now? (Y/N)"
@@ -40,10 +104,30 @@ function Invoke-Bootstrap {
             Pause
             return $false
         }
-        Write-Host "`n  Creating virtual environment..." -ForegroundColor Yellow
+        Write-Host ""
         try {
-            python -m venv .venv
-            Write-Host "  Virtual environment created." -ForegroundColor Green
+            $procVenv = Start-Process -FilePath "python" -ArgumentList "-m venv .venv" -WindowStyle Hidden -PassThru
+            $spinners = @('⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏')
+            $i = 0
+            try { [Console]::CursorVisible = $false } catch {}
+            
+            while (-not $procVenv.HasExited) {
+                Write-Host "`r  $($spinners[$i]) Creating virtual environment..." -NoNewline -ForegroundColor Yellow
+                $i = ($i + 1) % $spinners.Length
+                Start-Sleep -Milliseconds 80
+            }
+            if ($procVenv.ExitCode -ne 0) { throw "venv failed" }
+            Write-Host "`r  Virtual environment created.                    " -ForegroundColor Green
+            
+            $procPip = Start-Process -FilePath ".\.venv\Scripts\python.exe" -ArgumentList "-m pip install --upgrade pip -q" -WindowStyle Hidden -PassThru
+            while (-not $procPip.HasExited) {
+                Write-Host "`r  $($spinners[$i]) Upgrading pip...                 " -NoNewline -ForegroundColor DarkGray
+                $i = ($i + 1) % $spinners.Length
+                Start-Sleep -Milliseconds 80
+            }
+            Write-Host "`r                                                    `r" -NoNewline
+            try { [Console]::CursorVisible = $true } catch {}
+            $isFreshInstall = $true
         }
         catch {
             Write-Host "`n  Failed to create virtual environment." -ForegroundColor Red
@@ -54,38 +138,15 @@ function Invoke-Bootstrap {
 
     . ".\.venv\Scripts\Activate.ps1"
 
+    # --------------------------------------------------------------------------
+    # Dependency Check & Installation
+    # --------------------------------------------------------------------------
+    # Attempt a fast check by trying to import a core dependency (cv2)
     $depsCheck = & python -c "import cv2" 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Host "`n  Missing dependencies detected." -ForegroundColor Cyan
-        Write-Host "  Calculating download size..." -ForegroundColor DarkGray
-        
-        $outFile = Join-Path $env:TEMP "pip_report_$([guid]::NewGuid()).json"
-        Start-Process -FilePath ".\.venv\Scripts\python.exe" -ArgumentList "-m pip install --dry-run --report - -q -e `".[dev]`"" -WindowStyle Hidden -RedirectStandardOutput $outFile -RedirectStandardError $outFile -Wait
-        
-        $sizeStr = "unknown size"
-        $totalPkgs = 0
-        if (Test-Path $outFile) {
-            try {
-                $jsonStr = Get-Content $outFile -Raw
-                if ($jsonStr) {
-                    $report = $jsonStr | ConvertFrom-Json
-                    if ($report.install) { $totalPkgs = $report.install.Count }
-                    $bytes = 0
-                    foreach ($pkg in $report.install) {
-                        if ($pkg.download_info -and $pkg.download_info.archive_info -and $pkg.download_info.archive_info.size) {
-                            $bytes += $pkg.download_info.archive_info.size
-                        }
-                    }
-                    if ($bytes -gt 0) {
-                        $mb = [math]::Round($bytes / 1MB, 2)
-                        $sizeStr = "~$mb MB"
-                    }
-                }
-            } catch { }
-            Remove-Item $outFile -Force -ErrorAction SilentlyContinue
-        }
 
-        $confirm = Read-Host "  Do you want to install them now? ($sizeStr) (Y/N)"
+        $confirm = Read-Host "  Do you want to install them now? (~200 MB) (Y/N)"
         if ($confirm -notmatch '^[Yy]') {
             Write-Host "`n  Installation aborted." -ForegroundColor Red
             Pause
@@ -94,40 +155,63 @@ function Invoke-Bootstrap {
         Write-Host ""
         
         try {
-            $installLog = Join-Path $env:TEMP "pip_install_$([guid]::NewGuid()).log"
-            $procInstall = Start-Process -FilePath ".\.venv\Scripts\python.exe" -ArgumentList "-m pip install -e `".[dev]`"" -WindowStyle Hidden -RedirectStandardOutput $installLog -RedirectStandardError $installLog -PassThru
-            
+            # ------------------------------------------------------------------
+            # UV Accelerated Installation
+            # ------------------------------------------------------------------
+            # Standard pip is single-threaded and notoriously slow when resolving
+            # and downloading large binaries (like PyQt6 and OpenCV). We bootstrap 
+            # `uv` (a blazingly fast Rust-based package installer) via standard pip, 
+            # and then use `uv` to install the actual dependencies concurrently.
+            # ------------------------------------------------------------------
             $spinners = @('⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏')
             $i = 0
             try { [Console]::CursorVisible = $false } catch {}
-            
-            while (-not $procInstall.HasExited) {
-                $pctText = ""
-                if ($totalPkgs -gt 0 -and (Test-Path $installLog)) {
-                    $lines = Get-Content $installLog -ErrorAction SilentlyContinue
-                    $collected = @($lines -match '^(Collecting|Requirement already satisfied|Processing|Downloading|Installing collected packages)').Count
-                    # Rough heuristic: double the packages because it collects then installs. 
-                    $progress = [math]::Min(100, [math]::Floor(($collected / ($totalPkgs * 2)) * 100))
-                    if ($progress -gt 99) { $progress = 99 } # hold at 99 until process exits
-                    $pctText = " [$progress%]"
-                }
 
-                Write-Host "`r  $($spinners[$i]) Installing dependencies$pctText...                " -NoNewline -ForegroundColor Yellow
+            $uvLog = Join-Path $env:TEMP "uv_bootstrap_$([guid]::NewGuid()).log"
+            $uvErr = Join-Path $env:TEMP "uv_bootstrap_err_$([guid]::NewGuid()).log"
+            $procUv = Start-Process -FilePath ".\.venv\Scripts\python.exe" -ArgumentList "-m pip install uv -q" -WindowStyle Hidden -RedirectStandardOutput $uvLog -RedirectStandardError $uvErr -PassThru
+            while (-not $procUv.HasExited) {
+                Write-Host "`r  $($spinners[$i]) Bootstrapping accelerated installer...     " -NoNewline -ForegroundColor DarkGray
                 $i = ($i + 1) % $spinners.Length
                 Start-Sleep -Milliseconds 80
             }
+            Start-Sleep -Milliseconds 300
+            
+            if ($procUv.ExitCode -ne 0) {
+                Write-Host "`n  Dependency installation failed (uv bootstrap error)." -ForegroundColor Red
+                Get-Content $uvLog -ErrorAction SilentlyContinue | Write-Host -ForegroundColor DarkGray
+                Get-Content $uvErr -ErrorAction SilentlyContinue | Write-Host -ForegroundColor DarkRed
+                Pause
+                return $false
+            }
+            
+            $installLog = Join-Path $env:TEMP "pip_install_$([guid]::NewGuid()).log"
+            $installErr = Join-Path $env:TEMP "pip_install_err_$([guid]::NewGuid()).log"
+            $procInstall = Start-Process -FilePath ".\.venv\Scripts\uv.exe" -ArgumentList "pip install --python .\.venv -e `".[dev]`"" -WindowStyle Hidden -RedirectStandardOutput $installLog -RedirectStandardError $installErr -PassThru
+            
+            while (-not $procInstall.HasExited) {
+                Write-Host "`r  $($spinners[$i]) Installing dependencies (uv concurrent)...    " -NoNewline -ForegroundColor Yellow
+                $i = ($i + 1) % $spinners.Length
+                Start-Sleep -Milliseconds 80
+            }
+            Start-Sleep -Milliseconds 300
             Write-Host "`r                                                                      `r" -NoNewline
             try { [Console]::CursorVisible = $true } catch {}
             
             if ($procInstall.ExitCode -eq 0) {
                 Write-Host "  Dependencies installed. [100%]" -ForegroundColor Green
+                $isFreshInstall = $true
             } else {
                 Write-Host "  Dependency installation failed." -ForegroundColor Red
-                Get-Content $installLog | Write-Host -ForegroundColor DarkGray
+                Get-Content $installLog -ErrorAction SilentlyContinue | Write-Host -ForegroundColor DarkGray
+                Get-Content $installErr -ErrorAction SilentlyContinue | Write-Host -ForegroundColor DarkRed
                 Pause
                 return $false
             }
+            Remove-Item $uvLog -Force -ErrorAction SilentlyContinue
+            Remove-Item $uvErr -Force -ErrorAction SilentlyContinue
             Remove-Item $installLog -Force -ErrorAction SilentlyContinue
+            Remove-Item $installErr -Force -ErrorAction SilentlyContinue
         }
         catch {
             Write-Host "`n  Dependency installation failed." -ForegroundColor Red
@@ -139,6 +223,37 @@ function Invoke-Bootstrap {
         Write-Host "  Dependencies — OK" -ForegroundColor Green
     }
 
+    # --------------------------------------------------------------------------
+    # Desktop Shortcut Prompter
+    # --------------------------------------------------------------------------
+    $desktop = [Environment]::GetFolderPath('Desktop')
+    $shortcutPath = Join-Path $desktop "ShakeChecker.lnk"
+    if ($isFreshInstall -and -not (Test-Path $shortcutPath)) {
+        Write-Host ""
+        $confirm = Read-Host "  Do you want to create a Desktop shortcut? (Y/N)"
+        if ($confirm -match '^[Yy]') {
+            try {
+                $wshell = New-Object -ComObject WScript.Shell
+                $shortcut = $wshell.CreateShortcut($shortcutPath)
+                $shortcut.TargetPath = Join-Path $PWD.Path "launcher.cmd"
+                $shortcut.WorkingDirectory = $PWD.Path
+                
+                $iconPath = Join-Path $PWD.Path "data\shakechecker.ico"
+                if (-not (Test-Path $iconPath)) { $iconPath = Join-Path $PWD.Path "assets\shakechecker.ico" }
+                if (-not (Test-Path $iconPath)) { $iconPath = Join-Path $PWD.Path "shakechecker.ico" }
+                
+                if (Test-Path $iconPath) {
+                    $shortcut.IconLocation = $iconPath
+                }
+                $shortcut.Save()
+                Write-Host "  Shortcut created successfully!" -ForegroundColor Green
+                Start-Sleep -Milliseconds 600
+            } catch {
+                Write-Host "  [Debug] Failed to create shortcut: $($_.Exception.Message)" -ForegroundColor DarkGray
+            }
+        }
+    }
+
     return $true
 }
 
@@ -146,24 +261,6 @@ $ErrorActionPreference = "Continue"
 $ready = Invoke-Bootstrap
 $ErrorActionPreference = "Stop"
 if (-not $ready) { return }
-
-# ==============================================================================
-# HEADER
-# ==============================================================================
-function Show-Header {
-    Clear-Host
-    Write-Host ""
-    Write-Host "    ███████╗██╗  ██╗ █████╗ ██╗  ██╗███████╗ " -ForegroundColor Red
-    Write-Host "    ██╔════╝██║  ██║██╔══██╗██║ ██╔╝██╔════╝ " -ForegroundColor Red
-    Write-Host "    ███████╗███████║███████║█████═╝ █████╗   " -ForegroundColor Red
-    Write-Host "    ╚════██║██╔══██║██╔══██║██╔═██╗ ██╔══╝   " -ForegroundColor DarkGray
-    Write-Host "    ███████║██║  ██║██║  ██║██║  ██╗███████╗ " -ForegroundColor White
-    Write-Host "    ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝ " -ForegroundColor White
-    Write-Host "          C H E C K E R   V 1 . 2 . 0        " -ForegroundColor DarkGray
-    Write-Host ""
-    Write-Host "    [Environment: Active]" -ForegroundColor Green
-    Write-Host "    ----------------------------------------" -ForegroundColor DarkGray
-}
 
 # ==============================================================================
 # RUN PYTHON APPLICATION
@@ -227,9 +324,14 @@ function Show-Menu {
 
 # ==============================================================================
 # TERMINAL MODE
+# ------------------------------------------------------------------------------
+# Simulates a persistent REPL terminal for the virtual environment. 
+# It reads historical commands from a log file, allows users to execute standard
+# PowerShell commands or git tools, captures multi-line pasted text via KeyAvailable, 
+# and safely evaluates them via Invoke-Expression without dropping the UI.
 # ==============================================================================
 function Invoke-Terminal {
-    $historyFile = Join-Path $PSScriptRoot "logs/launcher_history.log"
+    $historyFile = Join-Path $PWD.Path "logs/launcher_history.log"
     $cmdHistory = @{}
     $seq = 0
 
@@ -369,6 +471,11 @@ while ($true) {
             Write-Host "`n  Build Application" -ForegroundColor Cyan
             Write-Host "  ----------------------------------------" -ForegroundColor DarkGray
 
+            # ------------------------------------------------------------------
+            # Differential Build Check
+            # ------------------------------------------------------------------
+            # Check if any core source files have been modified more recently 
+            # than the final .exe file to avoid unnecessary PyInstaller rebuilds.
             $exe = "dist\ShakeChecker\ShakeChecker.exe"
             $needs = $true
 
@@ -416,14 +523,34 @@ while ($true) {
             Clear-Host
             Write-Host "`n  Cleaning environment..." -ForegroundColor Cyan
             $targets = @("build", "dist", ".pytest_cache", ".ruff_cache", ".mypy_cache", ".pycache")
+            
+            if (Test-Path ".venv") {
+                $delVenv = Read-Host "  Do you want to completely remove the virtual environment? (Y/N)"
+                if ($delVenv -match '^[Yy]') {
+                    $targets = @(".venv") + $targets
+                }
+            }
+
+            $oldProg = $ProgressPreference
+            $ProgressPreference = 'SilentlyContinue'
             foreach ($t in $targets) {
                 if (Test-Path $t) {
                     Write-Host "  Removing $t..." -ForegroundColor Gray
                     Remove-Item -Recurse -Force $t
                 }
             }
+            $ProgressPreference = $oldProg
             Write-Host "  Done.`n" -ForegroundColor Green
-            Pause
+            Write-Host "  Rebooting environment..." -ForegroundColor Cyan
+            Start-Sleep -Milliseconds 600
+            Clear-Host
+            
+            $ready = Invoke-Bootstrap
+            if (-not $ready) {
+                Write-Host "`n  Bootstrap aborted. Exiting launcher." -ForegroundColor Red
+                Pause
+                exit
+            }
         }
         'q' { exit }
         'Q' { exit }
