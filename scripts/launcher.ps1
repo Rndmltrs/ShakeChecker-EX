@@ -1,28 +1,5 @@
-<# : 2>NUL
-@echo off
-PUSHD "%~dp0"
-set "PS=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
-WHERE pwsh >NUL 2>&1 && set "PS=pwsh"
-%PS% -NoProfile -ExecutionPolicy Bypass -Command "& ([ScriptBlock]::Create((Get-Content '%~f0' -Raw -Encoding UTF8)))" & POPD & EXIT /B
-#>
 # ==============================================================================
 # ShakeChecker Development Launcher
-# ------------------------------------------------------------------------------
-# Note: This file is a "Polyglot" script (a Batch script AND a PowerShell script).
-# 
-# How it works:
-#   1. When executed, Windows CMD runs the first line. 
-#   2. CMD fails to execute `<#` (throwing a silent error due to `2>NUL`), then 
-#      turns off echoing (`@echo off`), sets the working directory, and checks 
-#      if PowerShell 7 (`pwsh`) is installed. It then launches the chosen 
-#      PowerShell to dynamically read and execute this exact file (`%~f0`) 
-#      with the execution policy bypassed. Finally, it exits.
-#   3. When PowerShell reads the file, it treats everything between `<#` and `#>`
-#      as a multi-line block comment, completely ignoring the batch commands!
-#      `-Encoding UTF8` ensures special UI characters render correctly.
-#
-# This allows users to double-click the .cmd file and seamlessly launch a 
-# PowerShell environment without facing any security or execution policy blocks!
 # ------------------------------------------------------------------------------
 # This script initializes the development environment for ShakeChecker.
 # It validates Python, activates the virtual environment, installs dependencies, 
@@ -235,7 +212,7 @@ function Invoke-Bootstrap {
             try {
                 $wshell = New-Object -ComObject WScript.Shell
                 $shortcut = $wshell.CreateShortcut($shortcutPath)
-                $shortcut.TargetPath = Join-Path $PWD.Path "launcher.cmd"
+                $shortcut.TargetPath = Join-Path $PWD.Path "run_launcher.cmd"
                 $shortcut.WorkingDirectory = $PWD.Path
                 
                 $iconPath = Join-Path $PWD.Path "data\shakechecker.ico"
