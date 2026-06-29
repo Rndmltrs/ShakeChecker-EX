@@ -14,10 +14,13 @@ ShakeChecker is divided into four distinct domains, each strictly isolated:
 ### Directory Tree
 
 ```text
+data/                           ← Static game databases (encounters, species, etc.)
+scripts/                        ← Developer tooling for fetching and parsing game data
 src/
 ├── app.py                      ← The pure entry point and bootstrapper
 ├── battle/                     ← High-frequency encounter math and OCR
 │   ├── battle_controller.py
+│   ├── battle_detector.py
 │   ├── battle_log.py
 │   ├── battle_logic.py
 │   ├── battle_reader.py
@@ -30,11 +33,12 @@ src/
 ├── core/                       ← App state, timers, and the global controller
 │   ├── account_store.py
 │   ├── app_controller.py
-│   ├── app_state.py
+│   ├── config.py
 │   ├── debug_dump.py
 │   ├── game_time.py
 │   ├── ocr_engine.py
 │   ├── paths.py
+│   ├── services.py
 │   ├── settings_controller.py
 │   ├── settings_store.py
 │   ├── utils.py
@@ -56,6 +60,7 @@ src/
     ├── tray_menu.py
     ├── ui_components.py
     ├── ui_icons.py
+    ├── ui_manager.py
     ├── ui_overlay.py
     └── ui_theme.py
 ```
@@ -79,8 +84,8 @@ This function physically wires the application's components together.
 - **Instance Lock:** Acquires a process-wide Windows Mutex so only one instance of ShakeChecker can run.
 - **Logging setup:** Configures the logger (`_LevelFormatter`) to output to the console or file.
 - **Qt Engine:** Instantiates the `QApplication` (the core Qt framework) and suppresses harmless DPI warnings.
-- **Service Construction:** Uses factories to build the `BattlePanel`, `DexPanel`, and `DexSession`.
-- **Controller Wiring:** Injects the panels and session data into the `AppController`.
+- **Service Construction:** Builds the `BattlePanel` and `DexPanel`, and uses a factory for the `DexSession`.
+- **Controller Wiring:** Injects the panels, OCR engines, and trackers into the core `AppController`, which then constructs the `UIManager` to manage window docking and visibility.
 - **System Tray:** Builds the tray menu and wires up the "Quit" action.
 - **Liftoff:** Calls `loop.start()` to kickstart the controller's internal timer, and explicitly yields the main thread to Qt via `app.exec()`. Qt is now fully in charge of the process lifecycle.
 
@@ -113,12 +118,12 @@ A wild encounter has started. The application shifts to a highly reactive mode t
    - It reads the raw pixels to calculate the current HP percentage and scans for status condition icons (e.g., SLP, PAR).
 3. **Signal Settling:** Because the game UI animates (health bars slide down, bars flash when hit), raw OCR data can flicker. 
    - `HpSettler` and `StatusSettler` filter out the noise, ensuring the math only runs when the health bar has stabilized.
-4. **Enemy Resolution:** `src/battle/catch_math.py -> resolve_enemy()` identifies what you are fighting. 
+4. **Enemy Resolution:** `src/battle/catch_calc.py -> resolve_enemy()` identifies what you are fighting. 
    - It uses `NameReader` to run OCR on the enemy's nameplate, fuzzy-matches it against the `species.json` database, and extracts the base catch rate and typing. (This can be overridden via CLI flags).
 5. **Context & Math:** With the stable HP, status, and species known:
    - **Context Pipeline:** The app reads the battle chat log (`AsyncChatReader`) to parse the current turn number, and checks the local overworld state to see if it's currently night or if the player is in a cave (which triggers the 3x Dusk Ball multiplier).
-   - **Probability Matrix:** `catch_math.py -> ball_probs()` takes all this data and runs the exact Gen 5 catch formula for every single Pokéball type in the database.
-6. **Overlay Rendering:** The final probability matrix is passed to `BattlePanel`, which renders the click-through overlay directly on top of the PokeMMO window in real-time.
+   - **Probability Matrix:** `catch_calc.py -> ball_probs()` takes all this data and runs the exact Gen 5 catch formula for every single Pokéball type in the database.
+6. **Overlay Rendering:** The final probability matrix is passed to the `UIManager`, which handles dynamic window docking and commands the `BattlePanel` to render the click-through overlay on top of the PokeMMO window in real-time.
 7. **Exit Condition:** The tick loop continuously looks for the battle UI to disappear. Once gone for a set grace period, the state machine gracefully tears down the battle context, resets the thread pool, and drops back to `IDLE`.
 
 ## The Dex Pipeline
@@ -131,8 +136,8 @@ The Dex operates as an independent, asynchronous subsystem that runs alongside t
    - It fuzzy-matches the raw text against a massive mapping table (`area_index.json`) to resolve a canonical location ID.
 4. **Data Aggregation:** `DexSession` cross-references the canonical location with `encounters.json` and the active user's `CaughtStore` (their local save data tracking what they've caught). 
    - It builds a `LocationView` model containing all potential wild encounters for that specific map, flagging which ones the user is missing.
-5. **Presentation:** The `LocationView` is passed to `src/dex/dex_formatters.py` which formats it for the console, while the raw model is passed directly to the `DexPanel` to render the on-screen overlay.
-6. **Interactivity:** If the user clicks a Pokémon in the `DexPanel` to manually mark it as caught, the panel fires a callback back to `AppController`, which instructs `DexSession` to mutate the `CaughtStore` (saving it to disk) and instantly re-triggers the presentation layer.
+5. **Presentation:** The `LocationView` is passed to `src/dex/dex_formatters.py` which formats it for the console, while the raw model is passed to the `UIManager`, which docks and renders the `DexPanel` overlay.
+6. **Interactivity:** If the user clicks a Pokémon in the `DexPanel` to manually mark it as caught, the panel fires a callback back to the `SettingsController` and `AppController`, which instructs `DexSession` to mutate the `CaughtStore` (saving it to disk) and instantly re-triggers the presentation layer.
 
 ## System State Machine
 
@@ -237,9 +242,9 @@ controller = BattleController(
 ShakeChecker reads from static data and writes to dynamic local storage.
 
 - **Static Data (Read-Only):**
-  - `data/species.json`: Base catch rates, typing, and names.
+  - `data/species_core.json`: Base catch rates, typing, and names.
   - `data/encounters.json`: Global map data linking locations to wild encounters.
-  - `data/area_index.json`: Massive fuzzy-matching dictionary used to resolve raw OCR HUD text to canonical locations.
+  - `data/area_index.json`: Fuzzy-matching dictionary used to resolve raw OCR HUD text to canonical locations.
   - `calibration.toml`: Hardcoded X/Y coordinate ratios mapping exactly where UI elements sit on the screen.
 
 - **Dynamic State (Read/Write):**

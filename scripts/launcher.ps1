@@ -325,6 +325,7 @@ function Show-Menu {
     Write-Host "  [6] Type Checking (mypy)" -ForegroundColor Gray
     Write-Host "  [7] Unit Tests (pytest)" -ForegroundColor Gray
     Write-Host "  [8] Clean Environment" -ForegroundColor Gray
+    Write-Host "  [9] Update Data (Species & Locations)" -ForegroundColor Gray
     Write-Host ""
     Write-Host "  [Q] Quit" -ForegroundColor DarkRed
     Write-Host "    ----------------------------------------" -ForegroundColor DarkGray
@@ -561,6 +562,15 @@ while ($true) {
                 Pause
                 exit
             }
+        }
+        '9' {
+            Clear-Host
+            Write-Host "`n  Updating Data..." -ForegroundColor Cyan
+            Write-Host "  ----------------------------------------" -ForegroundColor DarkGray
+            Invoke-Task "Update Species Data" { python scripts\update_species.py }
+            Invoke-Task "Update Locations Data" { python scripts\update_locations.py }
+            Write-Host "`n  Data update complete!" -ForegroundColor Green
+            Pause
         }
         'q' { exit }
         'Q' { exit }
