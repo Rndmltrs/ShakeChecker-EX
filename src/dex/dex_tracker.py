@@ -85,8 +85,11 @@ class RegionResolver:
         """Attempt to fix an incomplete OCR name by mapping it to the closest known
         town or route, ensuring the UI always displays cleanly spelled locations."""
         norm = _normalize(hud_name)
-        if not norm or self.is_exact(hud_name):
+        if not norm:
             return hud_name
+
+        if norm in self._area_index:
+            return norm.title()
 
         from rapidfuzz import fuzz, process
 

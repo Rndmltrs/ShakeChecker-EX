@@ -2,7 +2,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from PyQt6.QtGui import QWindow
-from PyQt6.QtWidgets import QApplication, QWidget
+from PyQt6.QtWidgets import QWidget
 
 from ui.battle_panel import BattlePanel
 from ui.dex_panel import DexPanel
@@ -76,17 +76,6 @@ class UIManager:
         self.apply_mode_change(in_battle, f"manual mode override: {self.mode_override}")
 
     def apply_mode_change(self, in_battle: bool, log_msg: str | None = None) -> None:
-        if self.mode_override == "dex":
-            self.battle_panel.hide()
-        elif self.mode_override == "battle" and self.dex_panel is not None:
-            self.dex_panel.hide_panel()
-        elif self.mode_override == "auto":
-            if in_battle and self.dex_panel is not None:
-                self.dex_panel.hide_panel()
-            elif not in_battle:
-                self.battle_panel.hide()
-        QApplication.processEvents()
-
         if log_msg:
             log.info(log_msg)
 
@@ -161,13 +150,10 @@ class UIManager:
     def on_battle_start(self) -> None:
         if self.settings.auto_switch:
             self.mode_override = "auto"
-        if self.dex_panel is not None:
-            self.dex_panel.hide_panel()
 
     def on_battle_end(self) -> None:
         if self.settings.auto_switch:
             self.mode_override = "auto"
-        self.battle_panel.hide_battle()
 
     def update_battle_panel(
         self, update_state: dict[str, Any] | None, client_rect: "ClientRect", is_loading: bool

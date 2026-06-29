@@ -30,8 +30,8 @@ from PyQt6.QtCore import qInstallMessageHandler
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication
 
-from battle.battle_controller import BattleController
 from battle.battle_log import AsyncChatReader, read_turn_number
+from battle.battle_manager import BattleManager
 from battle.battle_reader import (
     BattleState,
     BattleTextReader,
@@ -281,7 +281,7 @@ def run(
         on_update=lambda x: None,
     )
 
-    battle_controller = BattleController(
+    battle_manager = BattleManager(
         species_override=species_override,
         status_override=status_override,
         cal=cal,
@@ -319,7 +319,7 @@ def run(
         capture=capture,
         battle_panel=battle_panel,
         settings_controller=settings_controller,
-        battle_controller=battle_controller,
+        battle_manager=battle_manager,
         dex_controller=dex_controller,
         vision_controller=vision_controller,
         config=config,

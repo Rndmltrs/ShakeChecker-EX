@@ -79,8 +79,11 @@ def test_not_in_battle_when_no_signal():
 # --- battle_end_grace -----------------------------------------------------
 
 
-def test_grace_trainer_beats_everything():
-    assert battle_end_grace(True, True, trainer_s=6.0, anim_s=4.0, normal_s=1.0) == 6.0
+def test_grace_trainer_with_ui_is_infinite():
+    assert battle_end_grace(True, True, trainer_s=6.0, anim_s=4.0, normal_s=1.0) == 120.0
+
+
+def test_grace_trainer_without_ui():
     assert battle_end_grace(True, False, trainer_s=6.0, anim_s=4.0, normal_s=1.0) == 6.0
 
 

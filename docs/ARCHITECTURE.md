@@ -1,13 +1,13 @@
 # ShakeChecker Architecture & Execution Flow
 
-This document outlines the core architecture, modular boundaries, and runtime execution flow of ShakeChecker following the v2 Sharding Refactor.
+This document outlines the core architecture, modular boundaries, and runtime execution flow of ShakeChecker following the v3 Battle Pipeline Refactor.
 
 ## Modular Boundaries
 
 ShakeChecker is divided into four distinct domains, each strictly isolated:
 
 - **`core/`**: Application state, path resolution, window capture, debugging, and the main `AppController` loop.
-- **`battle/`**: Everything related to the active battle sequence (OCR readers, HP settling, turn tracking, and catch probability math).
+- **`battle/`**: Everything related to the active battle sequence — pixel reading, species identification, turn tracking, and catch probability math.
 - **`dex/`**: Everything related to the overworld (location tracking, encounter tables, caught tracking, and profile management).
 - **`ui/`**: Pure PyQt6 presentation layers (overlays, settings panels, tray icon).
 
@@ -19,19 +19,20 @@ scripts/                        ← Developer tooling for fetching and parsing g
 src/
 ├── app.py                      ← The pure entry point and bootstrapper
 ├── battle/                     ← High-frequency encounter math and OCR
-│   ├── battle_controller.py
-│   ├── battle_detector.py
-│   ├── battle_log.py
-│   ├── battle_logic.py
-│   ├── battle_reader.py
-│   ├── catch_calc.py
-│   ├── catch_chain.py
-│   ├── hp_settler.py
-│   ├── name_reader.py
-│   ├── status_settler.py
-│   └── turn_tracker.py
+│   ├── battle_context.py       ← BattleContext + BattleTimeline (per-battle state)
+│   ├── battle_log.py           ← Async chat OCR reader
+│   ├── battle_logic.py         ← Pure, stateless logic functions (testable without Qt)
+│   ├── battle_manager.py       ← Unified lifecycle manager + internal FSM
+│   ├── battle_reader.py        ← Low-level CV bar/status reading functions
+│   ├── battle_vision.py        ← Pixel→semantics layer (produces BattleScene)
+│   ├── catch_calc.py           ← Catch probability math (Gen 5 formula)
+│   ├── catch_chain.py          ← Repeat-catch chain tracking
+│   ├── hp_settler.py           ← HP bar debounce filter
+│   ├── name_reader.py          ← Name-banner OCR + species resolver
+│   ├── status_settler.py       ← Status badge debounce filter
+│   ├── turn_tracker.py         ← Turn count (menu + chat sources)
+│   └── type_chart.py           ← Gen 5 type effectiveness matrix
 ├── core/                       ← App state, timers, and the global controller
-│   ├── account_store.py
 │   ├── app_controller.py
 │   ├── config.py
 │   ├── debug_dump.py
@@ -66,82 +67,148 @@ src/
 ```
 
 > [!IMPORTANT]
-> **The Pure-Impure Boundary:** UI components and state machines never perform complex calculations themselves. They delegate to pure, testable functions (e.g., `catch_calc.py`, `dex_formatters.py`) which return calculated state to be rendered.
+> **The Pure-Impure Boundary:** No code above the Vision layer ever imports `cv2` or `numpy` for battle purposes. Pixel operations are fully sealed inside `battle_vision.py`. UI components and state machines never perform complex calculations; they delegate to pure, testable functions (e.g., `catch_calc.py`, `battle_logic.py`, `dex_formatters.py`).
 
 ## Execution Flow
 
 The application boots in a strict sequence, transitioning from environment setup to a Qt-driven event loop.
 
-### 1. The Entry Point (`src/app.py -> main()`)
+### 1. The Entry Point (`src/app.py → main()`)
 Execution begins in `main()`. This function acts purely as an environment and configuration router.
 - **Environment Prep:** Restricts the ONNX OCR engine to 1 thread to prevent CPU thrashing.
 - **Argument Parsing:** Parses CLI arguments (`--debug`, `--account`, `--image`, etc.).
 - **Diagnostic Routing:** If a diagnostic flag like `--list-windows` is passed, it executes the diagnostic task and exits immediately.
 - **Handoff:** Loads base screen coordinates (`load_calibration`) and routes the user into the live application by calling `run()`.
 
-### 2. The Bootstrapper (`src/app.py -> run()`)
+### 2. The Bootstrapper (`src/app.py → run()`)
 This function physically wires the application's components together.
 - **Instance Lock:** Acquires a process-wide Windows Mutex so only one instance of ShakeChecker can run.
-- **Logging setup:** Configures the logger (`_LevelFormatter`) to output to the console or file.
+- **Logging setup:** Configures the logger to output to the console or file.
 - **Qt Engine:** Instantiates the `QApplication` (the core Qt framework) and suppresses harmless DPI warnings.
 - **Service Construction:** Builds the `BattlePanel` and `DexPanel`, and uses a factory for the `DexSession`.
-- **Controller Wiring:** Injects the panels, OCR engines, and trackers into the core `AppController`, which then constructs the `UIManager` to manage window docking and visibility.
-- **System Tray:** Builds the tray menu and wires up the "Quit" action.
-- **Liftoff:** Calls `loop.start()` to kickstart the controller's internal timer, and explicitly yields the main thread to Qt via `app.exec()`. Qt is now fully in charge of the process lifecycle.
+- **Controller Wiring:** Injects the panels, OCR engines, and trackers into `AppController`, which constructs the `UIManager` to manage window docking and visibility.
+- **System Tray:** Builds the tray menu and wires the "Quit" action.
+- **Liftoff:** Calls `loop.start()` to kickstart the controller's internal timer, then yields the main thread to Qt via `app.exec()`.
 
 ### 3. The Ticker (`src/core/app_controller.py`)
-Once `loop.start()` is called, the `AppController` schedules a continuous timer loop using Qt's `QTimer`.
-- **`step()`:** Triggered repeatedly by the timer. Its only job is to provide an exception guard and delegate work to `_tick()`.
-- **`_tick()`:** Serves as the State Machine router. It evaluates the current `AppState` and dynamically decides what work needs to be done on this exact frame.
+Once `loop.start()` is called, `AppController` schedules a continuous timer loop using Qt's `QTimer`.
+- **`step()`:** Triggered repeatedly by the timer. Provides an exception guard and delegates to `_tick()`.
+- **`_tick()`:** The State Machine router. Evaluates the current `AppState` and decides what work to do this frame.
 
 ## The State Machine (`_tick()`)
-Depending on what state the app is in, `_tick()` splits into three distinct execution pipelines:
 
 ### WAITING State
 The app has not yet detected the PokeMMO window.
-- The tick loop fires very slowly (`WAITING_POLL_S`).
 - Polls Windows using `find_pokemmo_hwnd()` until it successfully locks onto the game client.
 - Once found, transitions to `IDLE`.
 
 ### IDLE State
-The game is found, and the player is running around the overworld.
-- The tick loop fires moderately (`IDLE_FRAME_S`).
-- Checks every frame to see if a battle has initiated via visual cues. If so, transitions to `BATTLE`.
-- Periodically submits background tasks to a thread pool to read the HUD, identify the current location, and update the Location/Encounter Dex overlay.
+The game is found; the player is in the overworld.
+- Checks every frame for a battle via visual cues. If detected, transitions to `BATTLE`.
+- Periodically submits background tasks to identify the current location and update the Dex overlay.
 
 ### BATTLE State
-A wild encounter has started. The application shifts to a highly reactive mode to overlay live catch probabilities.
+A battle is active. The application shifts to a highly reactive mode.
 
-1. **High-Frequency Ticker:** The state machine accelerates the tick rate (`BATTLE_FRAME_S`, typically ~20ms) to track rapid UI changes during animations.
-2. **Vision (Battle OCR):** Every frame, `_battle_step()` captures the window and submits it to the thread pool.
-   - `read_battle()` (in `src/battle/battle_reader.py`) uses carefully calibrated coordinates to locate the wild Pokémon's health bar.
-   - It reads the raw pixels to calculate the current HP percentage and scans for status condition icons (e.g., SLP, PAR).
-3. **Signal Settling:** Because the game UI animates (health bars slide down, bars flash when hit), raw OCR data can flicker. 
-   - `HpSettler` and `StatusSettler` filter out the noise, ensuring the math only runs when the health bar has stabilized.
-4. **Enemy Resolution:** `src/battle/catch_calc.py -> resolve_enemy()` identifies what you are fighting. 
-   - It uses `NameReader` to run OCR on the enemy's nameplate, fuzzy-matches it against the `species.json` database, and extracts the base catch rate and typing. (This can be overridden via CLI flags).
-5. **Context & Math:** With the stable HP, status, and species known:
-   - **Context Pipeline:** The app reads the battle chat log (`AsyncChatReader`) to parse the current turn number, and checks the local overworld state to see if it's currently night or if the player is in a cave (which triggers the 3x Dusk Ball multiplier).
-   - **Probability Matrix:** `catch_calc.py -> ball_probs()` takes all this data and runs the exact Gen 5 catch formula for every single Pokéball type in the database.
-6. **Overlay Rendering:** The final probability matrix is passed to the `UIManager`, which handles dynamic window docking and commands the `BattlePanel` to render the click-through overlay on top of the PokeMMO window in real-time.
-7. **Exit Condition:** The tick loop continuously looks for the battle UI to disappear. Once gone for a set grace period, the state machine gracefully tears down the battle context, resets the thread pool, and drops back to `IDLE`.
+1. **Frame Capture:** Captures the game window at ~20ms intervals.
+2. **Vision (BattleScene):** The raw frame is passed to `BattleVision.step()`, which reads all HP bars, checks for trainer strips, diffs the name banner for Pokémon swaps, and emits a `BattleScene` — a single semantic snapshot of the frame with no numpy arrays.
+3. **BattleManager.step():** Consumes the `BattleScene` and drives the full battle lifecycle.
+4. **BattleUpdate → UI:** The Manager returns a `BattleUpdate` every frame, which `AppController` passes to `UIManager` to dock and render the `BattlePanel` overlay.
+5. **Exit Condition:** The Manager tracks grace periods and a brightness-spike detector; once the battle signals are gone for long enough, it emits an IDLE detector state and `AppController` tears down the battle context.
+
+## The Battle Pipeline (Detail)
+
+### Data Flow
+
+```text
+[ PokeMMO Window ]
+        │
+        ▼ (WindowCapture)
+[ Raw BGR Frame ]
+        │
+        ▼ (BattleVision.step)
+[ BattleScene ]          ← Pure semantics: booleans + scalars only, no pixel arrays
+        │
+        ▼ (BattleManager.step)
+┌──────────────────────────────────────────────┐
+│  battle_logic.py  ─── is_in_battle()         │
+│                   ─── debounce_battle()       │
+│                   ─── debounce_menu()         │
+│                   ─── battle_end_grace()      │
+│                   ─── apply_chat_turn()       │
+│                                              │
+│  TurnTracker  ──── observe_menu()            │
+│               ──── observe() / set_turn()    │
+│                                              │
+│  _BattleState FSM ── SCANNING                │
+│                   ── IDENTIFYING             │
+│                   ── TRACKING                │
+│                   ── SWAPPING                │
+└──────────────────────────────────────────────┘
+        │
+        ▼
+[ BattleUpdate ]
+        │
+        ▼ (UIManager → BattlePanel)
+[ Overlay ]
+```
+
+### BattleVision Layer (`battle_vision.py`)
+
+`BattleVision` is the **only** code that touches raw frames after capture. It seals every pixel operation:
+
+| Operation | Source function |
+|---|---|
+| HP bar reading | `battle_reader.read_enemy_bars()` |
+| Horde-remnant check | `battle_logic.is_horde_remnant()` |
+| Trainer strip detection | `battle_reader.is_trainer_battle()` |
+| Name-banner pixel diff | `cv2.absdiff` on half-res crop |
+| OT caught-icon check | `battle_reader.read_caught_icon()` |
+
+Output is a `BattleScene` dataclass containing only booleans, scalars, and the typed `BarReading` tuples from `battle_reader`. Nothing above this layer imports `cv2` or `numpy`.
+
+### BattleManager Internal FSM (`battle_manager.py`)
+
+The Manager contains a private `_BattleState` enum and named transition methods. Each transition is documented with the exact game logic it represents:
+
+```
+SCANNING     → waiting for trainer/wild classification + stable menu
+IDENTIFYING  → OCR submitted to thread pool; species not yet locked
+TRACKING     → species locked; normal HP/status/turn loop
+SWAPPING     → pixel diff detected; OCR verifying; OLD species held on UI
+```
+
+**Transition methods:**
+- `_on_trainer_decided(is_trainer)` — locks the wild/trainer classification after the stability guard passes.
+- `_on_menu_stable()` — first stable menu appearance; transitions `SCANNING → IDENTIFYING`.
+- `_on_name_changed(scene)` — pixel diff triggered; transitions `TRACKING → SWAPPING`.
+- `_on_ocr_result(sp)` — OCR thread completed; locks species (`IDENTIFYING → TRACKING`) or confirms/denies a swap (`SWAPPING → TRACKING`).
+
+**Pure logic delegation:**
+
+| Task | Delegated to |
+|---|---|
+| Battle membership gate | `battle_logic.is_in_battle()` + `debounce_battle()` |
+| Menu debounce | `battle_logic.debounce_menu()` |
+| Turn advancement | `TurnTracker.observe_menu()` |
+| Chat OCR correction | `battle_logic.apply_chat_turn()` |
+| End-of-battle grace | `battle_logic.battle_end_grace()` |
+| Catch probability | `catch_calc.ball_probs()` |
+
+The Manager does **not** re-implement any of this math; it wires inputs to these pure functions and consumes their outputs.
 
 ## The Dex Pipeline
 
-The Dex operates as an independent, asynchronous subsystem that runs alongside the main State Machine primarily during the `IDLE` state. Its goal is to passively track the player's location and display missing regional encounters.
+The Dex operates as an independent, asynchronous subsystem running alongside the main State Machine primarily during the `IDLE` state.
 
-1. **Trigger (`_update_dex`):** Fired periodically by `AppController` during the `IDLE` state.
-2. **Vision (Location OCR):** The controller captures the screen and crops the top-left HUD (where map names appear). It submits this crop to the thread pool for parsing via `src/dex/location_reader.py`.
-3. **Routing (`DexSession`):** The raw OCR text is returned and passed into `DexSession`. 
-   - It fuzzy-matches the raw text against a massive mapping table (`area_index.json`) to resolve a canonical location ID.
-4. **Data Aggregation:** `DexSession` cross-references the canonical location with `encounters.json` and the active user's `CaughtStore` (their local save data tracking what they've caught). 
-   - It builds a `LocationView` model containing all potential wild encounters for that specific map, flagging which ones the user is missing.
-5. **Presentation:** The `LocationView` is passed to `src/dex/dex_formatters.py` which formats it for the console, while the raw model is passed to the `UIManager`, which docks and renders the `DexPanel` overlay.
-6. **Interactivity:** If the user clicks a Pokémon in the `DexPanel` to manually mark it as caught, the panel fires a callback back to the `SettingsController` and `AppController`, which instructs `DexSession` to mutate the `CaughtStore` (saving it to disk) and instantly re-triggers the presentation layer.
+1. **Trigger:** Fired periodically by `AppController` during `IDLE`.
+2. **Vision (Location OCR):** Crops the top-left HUD and submits it to `location_reader.py`.
+3. **Routing (`DexSession`):** Raw OCR text is fuzzy-matched against `area_index.json` to resolve a canonical location ID.
+4. **Data Aggregation:** `DexSession` cross-references the location with `encounters.json` and the user's `CaughtStore`, building a `LocationView` of missing encounters.
+5. **Presentation:** `dex_formatters.py` formats for the console; `UIManager` docks and renders the `DexPanel` overlay.
+6. **Interactivity:** Clicking a Pokémon in the panel fires a callback to `DexSession` to mutate the `CaughtStore` and immediately re-render.
 
-## System State Machine
-
-The core `AppController` evaluates state every single tick. Transitions are strict and sequential:
+## System State Diagram
 
 ```text
 [ WAITING ] --(PokeMMO window found)--> [ IDLE ]
@@ -152,51 +219,24 @@ The core `AppController` evaluates state every single tick. Transitions are stri
     +---------------------------------- [ BATTLE ]
 ```
 
-- **WAITING:** Polling `win32gui` at a low frequency (~1 second). No active OCR.
-- **IDLE:** Fast polling. Checking for battle entry conditions. Periodic background thread OCR for location tracking.
-- **BATTLE:** Maximum frequency (~20ms). Continuous frame capture, OCR tracking for HP/Status, and active rendering of the `BattlePanel` overlay.
-
-## Data Flow Pipeline
-
-Data flows strictly in one direction from the game window to the UI layer.
-
-```text
-[ PokeMMO Window ]
-        │
-        ▼  (win32ui / OpenCV capture)
-[ Frame Buffer ]
-        │
-        ├─▶ (If IDLE) ──▶ [ Location OCR ] ──▶ [ DexSession (Match & Filter) ] ──▶ [ DexPanel UI ]
-        │
-        └─▶ (If BATTLE) ─▶ [ Battle OCR ] ──▶ [ Hp/Status Settler (Noise Filter) ]
-                                                       │
-                                                       ▼
-                            [ catch_calc.py (Probabilities & Context) ]
-                                                       │
-                                                       ▼
-                                              [ BattlePanel UI ]
-```
+- **WAITING:** Polling `win32gui` at low frequency (~1 second). No active OCR.
+- **IDLE:** Fast polling. Checking for battle entry. Periodic background OCR for location.
+- **BATTLE:** Maximum frequency (~20ms). Continuous frame capture, `BattleVision` + `BattleManager` pipeline, live `BattlePanel` overlay.
 
 ## Dependency Injection & Testability
 
-ShakeChecker utilizes a strict Dependency Injection (DI) pattern with explicit keyword-only constructors to fully decouple the runtime loop and controllers from their services.
+ShakeChecker uses strict Dependency Injection with explicit keyword-only constructors.
 
-- **The Rule:** Controllers (like `AppController`, `BattleController`, `DexController`, and `VisionController`) must NEVER instantiate services, trackers, thread pools, or configuration variables internally. Furthermore, controllers are strictly prohibited from importing global state constants.
-- **The Practice:** In `app.py`'s `run()` function (the Composition Root), the entire dependency graph is constructed. 
-  - Constants are loaded into an `AppConfig` struct.
-  - OCR readers are initialized and grouped into an `OcrServices` struct.
-  - Battle trackers (`TurnTracker`, `HpSettler`, etc.) are grouped into a `BattleServices` struct.
-  - These structs and explicit dependencies are then injected cleanly down the hierarchy via keyword-only arguments.
-- **The Benefit:** This guarantees absolute determinism and makes testing trivial. Test suites can instantiate a completely pure `BattleController` in less than a millisecond by passing it a dummy `AppConfig` and a `MockOcrServices` that returns synthetic text, allowing full pipeline simulations without ever launching Qt or a PokeMMO window.
+- **The Rule:** Controllers never instantiate services, thread pools, or configuration variables internally. They never import global state constants.
+- **The Practice:** In `app.py`'s `run()` (the Composition Root), the full dependency graph is constructed. Constants are loaded into an `AppConfig` struct; OCR readers into `OcrServices`; battle trackers (`TurnTracker`, `HpSettler`, etc.) into `BattleServices`. These are injected cleanly down the hierarchy.
+- **The Benefit:** Absolute determinism and trivial testability. A `BattleManager` can be instantiated in isolation with a dummy `AppConfig` and a mock `OcrServices`, allowing full pipeline simulations without launching Qt or a game window.
 
 ### Example: Mocking for Tests
-
-Because dependencies are explicit, you can instantiate a controller using mocks (like `unittest.mock.MagicMock` or simple dummy objects) to test its logic in isolation.
 
 ```python
 from unittest.mock import MagicMock
 from core.services import AppConfig, OcrServices, BattleServices
-from battle.battle_controller import BattleController
+from battle.battle_manager import BattleManager
 
 # 1. Create a dummy configuration
 test_config = AppConfig(
@@ -222,21 +262,22 @@ test_services = BattleServices(
     chain=CatchChain(),
 )
 
-# 4. Instantiate the Controller purely
-controller = BattleController(
+# 4. Instantiate the Manager purely
+manager = BattleManager(
     species_override=None,
     status_override=None,
     cal=mock_calibration,
     balls=mock_balls_list,
     status_rates=mock_rates,
-    pool=MagicMock(), # Mock the thread pool
+    pool=MagicMock(),
     ocr=mock_ocr,
     services=test_services,
     config=test_config
 )
 
-# Now you can pass in synthetic frames and assert the outputs!
+# Now pass in synthetic BattleScene objects and assert the BattleUpdate outputs!
 ```
+
 ## Configuration & Disk State
 
 ShakeChecker reads from static data and writes to dynamic local storage.
@@ -245,7 +286,7 @@ ShakeChecker reads from static data and writes to dynamic local storage.
   - `data/species_core.json`: Base catch rates, typing, and names.
   - `data/encounters.json`: Global map data linking locations to wild encounters.
   - `data/area_index.json`: Fuzzy-matching dictionary used to resolve raw OCR HUD text to canonical locations.
-  - `calibration.toml`: Hardcoded X/Y coordinate ratios mapping exactly where UI elements sit on the screen.
+  - `calibration.toml`: X/Y coordinate ratios mapping exactly where UI elements sit on the screen.
 
 - **Dynamic State (Read/Write):**
   - `%APPDATA%/ShakeChecker/settings.json`: User preferences (UI scaling, theme choices). Loaded on boot by `Settings`.

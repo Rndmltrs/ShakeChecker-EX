@@ -55,7 +55,7 @@ PAD_RARITIES = frozenset({"Lure", "Rare", "Very Rare"})
 
 # Same channel-suffix strip used for the cave heuristic, kept local to avoid a
 # circular import with location_reader.
-_CH_SUFFIX = re.compile(r"\s*ch\.?\s*\d+.*$", re.IGNORECASE)
+_CH_SUFFIX = re.compile(r"\b(?:ch|cb|c|gh|oh|0h)\.?\s*(?:\d+)?(?:[^a-z0-9]*)$", re.IGNORECASE)
 # Default fuzzy threshold (rapidfuzz ratio 0-100) for tolerating OCR noise.
 MATCH_THRESHOLD = 82.0
 

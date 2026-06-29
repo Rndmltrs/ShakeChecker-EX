@@ -180,7 +180,13 @@ class TypeEffectivenessPanel(QWidget):
 
             for t in types:
                 t = t.lower()
-                p = Path(__file__).resolve().parent.parent.parent / "assets" / "types" / f"{t}.png"
+                p = (
+                    Path(__file__).resolve().parent.parent.parent
+                    / "data"
+                    / "sprites"
+                    / "types"
+                    / f"{t}.png"
+                )
                 # Natively scale via HTML height attribute and align to text baseline
                 html.append(f'<img src="file:///{p.as_posix()}" height="14" align="middle"> ')
 
@@ -271,8 +277,8 @@ class BattlePanel(BaseOverlay):
         self._header.addWidget(self._sprite)
         self._header.addWidget(self._name, 1)
         self._header.addLayout(self._type_icons_layout)
-        self._header.addWidget(self._refresh_btn)
         self._header.addWidget(self._status)
+        self._header.addWidget(self._refresh_btn)
         self._header.setContentsMargins(0, 0, 0, 0)
         self._col.addLayout(self._header)
 
@@ -401,7 +407,7 @@ class BattlePanel(BaseOverlay):
         status: str | None = None,
         hp_pct: float | None = None,
         alpha: bool = False,
-        is_trainer: bool = False,
+        is_trainer: bool | None = None,
         enemy_types: tuple[str, ...] = (),
         is_empty: bool = False,
     ) -> None:
@@ -419,7 +425,8 @@ class BattlePanel(BaseOverlay):
         for i, t in enumerate(enemy_types):
             p = (
                 Path(__file__).resolve().parent.parent.parent
-                / "assets"
+                / "data"
+                / "sprites"
                 / "types"
                 / f"{t.lower()}.png"
             )
@@ -448,14 +455,16 @@ class BattlePanel(BaseOverlay):
             self._sprite.setVisible(True)
             self._hp.setVisible(True)
             self._empty_row.setVisible(False)
-            if is_trainer:
+            if is_trainer is True:
                 self._sub.setText("Trainer Battle")
-            else:
+            elif is_trainer is False:
                 self._sub.setText(subheader_text(catch_rate, turn))
+            else:
+                self._sub.setText("Reading battle...")
             self._hp.setText(f"HP: {hp_pct:.0f}%" if hp_pct is not None else "")
             self._set_status(status)
 
-        if is_trainer:
+        if is_trainer is True:
             if getattr(self, "_last_enemy_types", None) != enemy_types:
                 self._last_enemy_types = enemy_types
                 self._last_order = None  # force layout invalidation
@@ -465,7 +474,7 @@ class BattlePanel(BaseOverlay):
             self._last_enemy_types = None
             self._type_panel.setVisible(False)
 
-        if is_trainer or is_empty or dex_id == 0 or (not probs and not unknown):
+        if is_trainer is not False or is_empty or dex_id == 0 or (not probs and not unknown):
             order = []
         else:
             for ball_name, row in self._ball_rows.items():

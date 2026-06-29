@@ -85,7 +85,12 @@ BALLS = ["Poké Ball", "Great Ball", "Quick Ball"]
 def test_show_battle_sets_header_and_percentages(qt_app):
     ov = Overlay(BALLS)
     ov.show_battle(
-        419, "Floatzel", 75, 2, {"Poké Ball": 0.098, "Great Ball": 0.60, "Quick Ball": 0.80}
+        419,
+        "Floatzel",
+        75,
+        2,
+        {"Poké Ball": 0.098, "Great Ball": 0.60, "Quick Ball": 0.80},
+        is_trainer=False,
     )
     assert ov._name.text() == "Floatzel"
     assert ov._sub.text() == subheader_text(75, 2)
@@ -98,7 +103,9 @@ def test_show_battle_sets_header_and_percentages(qt_app):
 def test_show_battle_hides_and_sorts_rows(qt_app):
     ov = Overlay(["Poké Ball", "Great Ball", "Ultra Ball"])
     ov.set_hidden_names({"Great Ball"})
-    ov.show_battle(1, "X", 45, 1, {"Poké Ball": 0.2, "Great Ball": 0.5, "Ultra Ball": 0.4})
+    ov.show_battle(
+        1, "X", 45, 1, {"Poké Ball": 0.2, "Great Ball": 0.5, "Ultra Ball": 0.4}, is_trainer=False
+    )
     assert ov._ball_rows["Great Ball"].isHidden()  # filtered out
     assert not ov._ball_rows["Ultra Ball"].isHidden()
     assert not ov._ball_rows["Poké Ball"].isHidden()
@@ -108,10 +115,10 @@ def test_show_battle_hides_and_sorts_rows(qt_app):
 def test_overlay_height_shrinks_when_balls_hidden(qt_app):
     ov = Overlay(["Poké Ball", "Great Ball", "Ultra Ball", "Net Ball"])
     probs = {"Poké Ball": 0.2, "Great Ball": 0.3, "Ultra Ball": 0.4, "Net Ball": 0.5}
-    ov.show_battle(1, "X", 45, 1, probs)  # all four rows
+    ov.show_battle(1, "X", 45, 1, probs, is_trainer=False)  # all four rows
     full = ov.height()
     ov.set_hidden_names({"Great Ball", "Ultra Ball"})
-    ov.show_battle(1, "X", 45, 1, probs)  # two rows
+    ov.show_battle(1, "X", 45, 1, probs, is_trainer=False)  # two rows
     assert ov.height() < full  # window got shorter, not just the rows spread apart
 
 
@@ -122,9 +129,9 @@ def test_overlay_fits_content_when_filtering_down(qt_app):
     balls = [f"Ball{i}" for i in range(12)]
     ov = Overlay(balls)
     probs = {b: 0.1 + 0.01 * i for i, b in enumerate(balls)}
-    ov.show_battle(1, "X", 45, 1, probs)  # all twelve rows -> tall window
+    ov.show_battle(1, "X", 45, 1, probs, is_trainer=False)  # all twelve rows -> tall window
     ov.set_hidden_names(set(balls[4:]))  # keep only 4
-    ov.show_battle(1, "X", 45, 1, probs)
+    ov.show_battle(1, "X", 45, 1, probs, is_trainer=False)
     assert ov.height() == ov.sizeHint().height()  # window pinned to content, no slack
     visible = sorted(ov._ball_rows[b].y() for b in balls[:4])
     gaps = [visible[i + 1] - visible[i] for i in range(len(visible) - 1)]
@@ -171,7 +178,7 @@ def test_status_badge_shown_and_hidden(qt_app):
 
 def test_missing_ball_shows_dash(qt_app):
     ov = Overlay(BALLS)
-    ov.show_battle(1, "Bulbasaur", 45, 1, {"Poké Ball": 0.1})  # no Great/Quick
+    ov.show_battle(1, "Bulbasaur", 45, 1, {"Poké Ball": 0.1}, is_trainer=False)  # no Great/Quick
     assert ov._ball_rows["Great Ball"].pct.text() == ""
 
 
@@ -187,7 +194,7 @@ def test_unknown_catch_rate_shows_question_marks(qt_app):
     # roaming Latias/Latios/Mesprit/Cresselia: no known rate -> "??" everywhere,
     # all (non-hidden) balls still listed (not dropped as they would be for None probs).
     ov = Overlay(BALLS)
-    ov.show_battle(380, "Latias", None, 1, {})
+    ov.show_battle(380, "Latias", None, 1, {}, is_trainer=False)
     assert ov._sub.text() == "Rate: ??  ·  Turn 1"
     for ball in BALLS:
         assert ov._ball_rows[ball].pct.text() == "??"

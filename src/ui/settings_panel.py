@@ -283,6 +283,20 @@ class SettingsPanel:
         dump_btn.clicked.connect(self._handle_dump_debug)
         box.addWidget(dump_btn)
 
+        sep5 = QFrame()
+        sep5.setFrameShape(QFrame.Shape.HLine)
+        sep5.setObjectName("Divider")
+        box.addWidget(sep5)
+
+        exit_btn = QPushButton("Exit ShakeChecker")
+        exit_btn.setFont(self._font(12, bold=True))
+        exit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        exit_btn.setStyleSheet("color: #ff5555;")
+        exit_btn.clicked.connect(
+            lambda: __import__("PyQt6.QtWidgets", fromlist=["QApplication"]).QApplication.quit()
+        )
+        box.addWidget(exit_btn)
+
     # --- Internal Event Handlers ---
     def _handle_choose_profile(self, name: str) -> None:
         if self.on_choose_profile:

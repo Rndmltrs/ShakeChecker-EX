@@ -11,9 +11,9 @@ from PyQt6.QtCore import QRect, QTimer
 from PyQt6.QtGui import QWindow
 from PyQt6.QtWidgets import QApplication, QWidget
 
-from battle.battle_controller import BattleController, BattleFrame
-from battle.battle_detector import BattleDetector, BattleDetectorState
+from battle.battle_manager import BattleDetectorState, BattleInput, BattleManager
 from battle.battle_reader import Calibration
+from battle.battle_vision import BattleVision
 from core import paths
 from core.services import AppConfig, OcrServices
 from core.settings_controller import SettingsController, SettingsUpdate
@@ -60,7 +60,7 @@ class AppController:
         capture: WindowCapture,
         battle_panel: BattlePanel,
         settings_controller: SettingsController,
-        battle_controller: BattleController,
+        battle_manager: BattleManager,
         dex_controller: DexController,
         vision_controller: VisionController,
         config: AppConfig,
@@ -88,10 +88,10 @@ class AppController:
         self.hwnd: int | None = None
         self.last_seen_battle = 0.0
 
-        self.battle_controller = battle_controller
+        self.battle_manager = battle_manager
         self.dex_controller = dex_controller
         self.settings_controller = settings_controller
-        self.battle_detector = BattleDetector(self.config)
+        self._battle_vision = BattleVision()
         self.ui_manager = UIManager(self.battle_panel, self.dex_panel, self.settings)
 
         self.battle_panel.set_hidden_names(self.settings_controller.hidden_ball_names())
@@ -322,53 +322,55 @@ class AppController:
 
         needs_reading = (self.ui_manager.mode_override != "dex") or (
             self.state == AppState.BATTLE
-            and getattr(self.battle_controller, "cached", None) is None
+            and (self.battle_manager.ctx.species is None or self.battle_manager.ctx.is_trainer)
         )
 
-        vision_hint = (
-            self.battle_controller.get_vision_hint()
-            if hasattr(self, "battle_controller")
-            else False
-        )
-        vision = self.vision_controller.step(frame, needs_reading, vision_hint)
+        vision = self.vision_controller.step(frame, needs_reading, False)
 
         if vision is None:
             return self._frame_interval()
 
         reading = vision.battle_reading_raw
         bt = vision.battle_text_raw
-        ui_present = vision.hud_present
-        is_trainer = (
-            self.battle_controller._is_trainer if hasattr(self, "battle_controller") else False
+
+        # Build the semantic BattleScene from raw vision output
+        scene = self._battle_vision.step(
+            frame,
+            reading,
+            bt,
+            vision.enemy_count,
+            self.cal,
+            hud_present=vision.hud_present,
+            ui_brightness=vision.ui_brightness,
+            location_text=self._loc_ocr_raw,
+            now=now,
+            known_species=self.battle_manager.ctx.species,
         )
 
-        det_state, grace, since = self.battle_detector.step(vision, needs_reading, is_trainer, now)
-
-        if det_state == BattleDetectorState.ACTIVE:
-            if self.state is not AppState.BATTLE:
-                self.state = AppState.BATTLE
-                self.ui_manager.on_battle_start()
-                log.info("battle detected")
-                self.battle_controller.reset(now)
-
-            b_frame = BattleFrame(
-                frame=frame,
-                battle_reading_raw=reading,
-                battle_text_raw=bt,
-                enemy_count=vision.enemy_count,
+        det_state, update = self.battle_manager.step(
+            BattleInput(
+                scene=scene,
+                frame=frame.copy(),
+                timer_active=("timer" not in self.settings.hidden_balls)
+                and (self.ui_manager.mode_override != "dex"),
                 rect=QRect(
                     client_rect.left,
                     client_rect.top,
                     client_rect.width,
                     client_rect.height,
                 ),
-                now=now,
-                location_text=self._loc_ocr_raw,
+                chat_turn=self.ocr.chat_reader.poll(),
             )
-            timer_active = ("timer" not in self.settings.hidden_balls) and (
-                self.ui_manager.mode_override != "dex"
-            )
-            update = self.battle_controller.step(b_frame, timer_active)
+        )
+
+        if det_state == BattleDetectorState.ACTIVE:
+            if self.state is not AppState.BATTLE:
+                self.state = AppState.BATTLE
+                self.ui_manager.on_battle_start()
+                log.info("battle detected")
+                self.battle_manager.reset(now)
+                self._battle_vision.reset()
+                return self._frame_interval()
 
             if (
                 update.caught_species_id
@@ -379,27 +381,20 @@ class AppController:
 
             self.ui_manager.update_battle_panel(update.panel_state, client_rect, update.is_loading)
         elif det_state == BattleDetectorState.GAP:
-            # In a battle but no battle signal this frame (animation gap). Log what
-            # dropped out so a false "battle ended" can be diagnosed: which signal
-            # is missing and whether ui_present held the grace at the longer value.
             log.debug(
-                "battle gap: ui=%s state=%s menu=%s action=%s caught=%s grace=%.1f since=%.2f",
-                ui_present,
-                reading.state.name if reading else "None",
-                bt.menu_present if bt else "None",
-                bt.action if bt else "None",
-                bt.caught if bt else "None",
-                grace,
-                since,
+                "battle gap: hud=%s state=%s menu=%s action=%s caught=%s",
+                scene.hud_present,
+                scene.state.name,
+                scene.menu_present,
+                scene.action_present,
+                scene.caught_present,
             )
         elif det_state == BattleDetectorState.IDLE:
             if self.state is AppState.BATTLE:
                 self.state = AppState.IDLE
                 self.ui_manager.on_battle_end()
                 self.last_line = ""
-                if (
-                    not self.battle_controller._caught_printed
-                ):  # after a catch we already said "caught X!"
+                if not self.battle_manager.ctx.caught_logged:
                     log.info("battle ended")
                 self.vision_controller.reset()
                 # Show the dex panel at once, from the pre-battle location (you can't
@@ -508,6 +503,6 @@ class AppController:
         log.info("Forced location refresh via Dex panel")
 
     def _force_refresh_battle(self) -> None:
-        if hasattr(self, "battle_controller"):
-            self.battle_controller.force_refresh()
+        if hasattr(self, "battle_manager"):
+            self.battle_manager.force_refresh()
         log.info("Forced battle state refresh via Battle panel")

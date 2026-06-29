@@ -62,6 +62,10 @@ def battle_end_grace(
     if the dark command panel is still up we're mid-battle in an animation (a
     2-turn move hides the bar with no menu) so don't end early; otherwise short,
     so the catch overlay clears promptly once we're truly back in the overworld."""
+    if is_trainer and ui_present:
+        # Extend infinitely during trainer battles while the dark UI is visible
+        # to prevent the battle from dropping during "learn a move" or slow dialog
+        return 120.0
     if is_trainer:
         return trainer_s
     if ui_present:
