@@ -265,33 +265,6 @@ class BattleController:
         hp_pct = self.hp.update(bar.hp_pct)
         status = self.status_override or self.status.update(bar.status.value)
 
-        if self._is_trainer:
-            update.panel_state = {
-                "dex_id": 0,
-                "name": "Trainer's Pokémon",
-                "catch_rate": None,
-                "turn": self.turns.turns_completed + 1,
-                "probs": {},
-                "level": None,
-                "status": status if status != "none" else None,
-                "hp_pct": hp_pct,
-                "alpha": False,
-                "is_trainer": True,
-            }
-
-            turn_note = f"turn {self.turns.turns_completed + 1}"
-            if self.turns.turns_asleep:
-                turn_note += f", asleep {self.turns.turns_asleep}"
-            line = f"[{turn_note}] Trainer's Pokémon HP {hp_pct:5.1f}% [{status}]"
-
-            if line != self.last_line:
-                if update.log_line:
-                    log.info(update.log_line)
-                update.log_line = line
-                self.last_line = line
-
-            return
-
         if self.species_override is not None:
             self.cached = self.species_override
         elif self.cached is None:
@@ -316,6 +289,35 @@ class BattleController:
                     and sp["name"] == self.cached["name"]
                 ):
                     self.cached["level"] = sp["level"]
+
+        if self._is_trainer:
+            enemy_types = tuple(self.cached.get("types", [])) if self.cached else ()
+            update.panel_state = {
+                "dex_id": self.cached.get("id", 0) if self.cached else 0,
+                "name": self.cached["name"] if self.cached else "Trainer's Pokémon",
+                "catch_rate": None,
+                "turn": self.turns.turns_completed + 1,
+                "probs": {},
+                "level": self.cached.get("level") if self.cached else None,
+                "status": status if status != "none" else None,
+                "hp_pct": hp_pct,
+                "alpha": False,
+                "is_trainer": True,
+                "enemy_types": enemy_types,
+            }
+
+            turn_note = f"turn {self.turns.turns_completed + 1}"
+            if self.turns.turns_asleep:
+                turn_note += f", asleep {self.turns.turns_asleep}"
+            line = f"[{turn_note}] Trainer's Pokémon HP {hp_pct:5.1f}% [{status}]"
+
+            if line != self.last_line:
+                if update.log_line:
+                    log.info(update.log_line)
+                update.log_line = line
+                self.last_line = line
+
+            return
 
         if (
             not self._ot_checked
@@ -368,6 +370,7 @@ class BattleController:
                 "status": status,
                 "hp_pct": hp_pct,
                 "alpha": bool(self.cached.get("alpha")),
+                "enemy_types": tuple(self.cached.get("types", [])) if self.cached else (),
             }
 
         if line != self.last_line:

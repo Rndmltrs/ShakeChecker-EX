@@ -19,6 +19,7 @@ Run standalone to preview the look without the game:
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 
 from PyQt6.QtCore import QPoint, QSize, Qt
 from PyQt6.QtGui import QColor, QIcon, QMovie
@@ -33,6 +34,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from battle.type_chart import calculate_effectiveness
 from ui.sprite_loader import SpriteLoader
 from ui.ui_components import BattleBallRow
 from ui.ui_overlay import (
@@ -100,6 +102,97 @@ def unknown_ball_order(ball_names: list[str], hidden: set[str]) -> list[str]:
     return [n for n in ball_names if n not in hidden]
 
 
+class _TypeRow(QWidget):
+    icons_lbl: QLabel
+
+
+class TypeEffectivenessPanel(QWidget):
+    def __init__(self) -> None:
+        super().__init__()
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(4)
+
+        self.weak_row = self._create_row("Weak To:")
+        self.resist_row = self._create_row("Resists:")
+        self.immune_row = self._create_row("Immune:")
+
+        self._layout.addWidget(self.weak_row)
+        self._layout.addWidget(self.resist_row)
+        self._layout.addWidget(self.immune_row)
+        self._layout.addStretch(1)
+
+        self._rows = [self.weak_row, self.resist_row, self.immune_row]
+
+    def _create_row(self, title: str) -> _TypeRow:
+        w = _TypeRow()
+        lay = QHBoxLayout(w)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(4)
+
+        lbl = QLabel(title)
+        lbl.setObjectName("SecondaryText")
+        # Give it a fixed width so columns align visually
+        lbl.setFixedWidth(55)
+        lbl.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        lay.addWidget(lbl)
+
+        # Single label for icons that supports word wrap
+        icons_lbl = QLabel()
+        icons_lbl.setWordWrap(True)
+        icons_lbl.setTextFormat(Qt.TextFormat.RichText)
+        icons_lbl.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        lay.addWidget(icons_lbl, 1)
+
+        w.icons_lbl = icons_lbl
+        return w
+
+    def update_types(self, enemy_types: tuple[str, ...]) -> None:
+        eff = calculate_effectiveness(enemy_types)
+
+        # Weak To: 4x then 2x
+        weak_groups = [("4x:", eff.get(4.0, [])), ("2x:", eff.get(2.0, []))]
+        # Resists: 0.25x then 0.5x
+        resist_groups = [("0.25x:", eff.get(0.25, [])), ("0.5x:", eff.get(0.5, []))]
+        # Immune: 0x
+        immune_groups = [("", eff.get(0.0, []))]
+
+        self._populate_row(self.weak_row, weak_groups)
+        self._populate_row(self.resist_row, resist_groups)
+        self._populate_row(self.immune_row, immune_groups)
+
+    def _populate_row(self, row: _TypeRow, groups: list[tuple[str, list[str]]]) -> None:
+        html: list[str] = []
+        for prefix, types in groups:
+            if not types:
+                continue
+
+            # If we already have HTML content, we are starting a new group, so insert a line break
+            if html:
+                html.append("<br>")
+
+            # Add prefix if provided
+            if prefix:
+                html.append(
+                    f'<span style="color:#d0d0d0; font-size:11px; '
+                    f'font-weight:bold;">{prefix}</span> '
+                )
+
+            for t in types:
+                t = t.lower()
+                p = Path(__file__).resolve().parent.parent.parent / "assets" / "types" / f"{t}.png"
+                # Natively scale via HTML height attribute and align to text baseline
+                html.append(f'<img src="file:///{p.as_posix()}" height="14" align="middle"> ')
+
+        final_html = "".join(html).strip()
+
+        if not final_html:
+            row.setVisible(False)
+        else:
+            row.setVisible(True)
+            row.icons_lbl.setText(final_html)
+
+
 class BattlePanel(BaseOverlay):
     def __init__(self, ball_names: list[str], loader: SpriteLoader | None = None) -> None:
         super().__init__(
@@ -112,6 +205,7 @@ class BattlePanel(BaseOverlay):
         self._ball_rows: dict[str, BattleBallRow] = {}  # one reorderable row widget per ball
         self._hidden_names: set[str] = set()  # balls the user chose to hide
         self._last_order: list[str] | None = None  # skip reordering when unchanged
+        self._last_enemy_types: tuple[str, ...] | None = None
 
         self.get_ball_state: Callable[[], tuple[list[tuple[str, str]], set[str]]] | None = None
         self.on_toggle_ball: Callable[[str], None] | None = None
@@ -154,6 +248,18 @@ class BattlePanel(BaseOverlay):
         # Ignored width: a long name clips instead of widening the panel.
         self._name.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self._name.setObjectName("PrimaryText")
+
+        from PyQt6.QtWidgets import QVBoxLayout
+
+        self._type_icons_layout = QVBoxLayout()
+        self._type_icons_layout.setContentsMargins(0, 0, 0, 0)
+        self._type_icons_layout.setSpacing(0)
+        self._type_icons_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        self._type_icon_lbl1 = QLabel()
+        self._type_icon_lbl2 = QLabel()
+        self._type_icons_layout.addWidget(self._type_icon_lbl1)
+        self._type_icons_layout.addWidget(self._type_icon_lbl2)
+
         self._status = QLabel()
         self._status.setVisible(False)
 
@@ -164,6 +270,7 @@ class BattlePanel(BaseOverlay):
 
         self._header.addWidget(self._sprite)
         self._header.addWidget(self._name, 1)
+        self._header.addLayout(self._type_icons_layout)
         self._header.addWidget(self._refresh_btn)
         self._header.addWidget(self._status)
         self._header.setContentsMargins(0, 0, 0, 0)
@@ -202,6 +309,10 @@ class BattlePanel(BaseOverlay):
         self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
         _row_e.addWidget(self._empty_label)
         self._balls_layout.addWidget(self._empty_row)  # always first child
+
+        self._type_panel = TypeEffectivenessPanel()
+        self._type_panel.setVisible(False)
+        self._balls_layout.addWidget(self._type_panel)
 
         # one row per ball: icon + name (left) + percent (right). Each row is its own
         # widget so show_battle() can reorder (best % on top) and hide filtered balls.
@@ -291,6 +402,7 @@ class BattlePanel(BaseOverlay):
         hp_pct: float | None = None,
         alpha: bool = False,
         is_trainer: bool = False,
+        enemy_types: tuple[str, ...] = (),
         is_empty: bool = False,
     ) -> None:
         """Update the overlay for the current enemy and show it.
@@ -301,6 +413,24 @@ class BattlePanel(BaseOverlay):
         unknown = catch_rate is None
         self._set_sprite(dex_id)
         self._alpha_glow.setEnabled(alpha)  # red aura marks an Alpha Pokémon
+        # Render Pokemon's own types next to the level stacked vertically
+        self._type_icon_lbl1.setVisible(False)
+        self._type_icon_lbl2.setVisible(False)
+        for i, t in enumerate(enemy_types):
+            p = (
+                Path(__file__).resolve().parent.parent.parent
+                / "assets"
+                / "types"
+                / f"{t.lower()}.png"
+            )
+            img_html = f'<img src="file:///{p.as_posix()}" height="14">'
+            if i == 0:
+                self._type_icon_lbl1.setText(img_html)
+                self._type_icon_lbl1.setVisible(True)
+            elif i == 1:
+                self._type_icon_lbl2.setText(img_html)
+                self._type_icon_lbl2.setVisible(True)
+
         lvl = (
             f' <span style="font-size:{self._level_px}px; color:#9aa0aa;">Lv.{level}</span>'
             if level
@@ -324,6 +454,16 @@ class BattlePanel(BaseOverlay):
                 self._sub.setText(subheader_text(catch_rate, turn))
             self._hp.setText(f"HP: {hp_pct:.0f}%" if hp_pct is not None else "")
             self._set_status(status)
+
+        if is_trainer:
+            if getattr(self, "_last_enemy_types", None) != enemy_types:
+                self._last_enemy_types = enemy_types
+                self._last_order = None  # force layout invalidation
+            self._type_panel.update_types(enemy_types)
+            self._type_panel.setVisible(True)
+        else:
+            self._last_enemy_types = None
+            self._type_panel.setVisible(False)
 
         if is_trainer or is_empty or dex_id == 0 or (not probs and not unknown):
             order = []
