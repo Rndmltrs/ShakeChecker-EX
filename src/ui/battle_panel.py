@@ -103,6 +103,7 @@ def unknown_ball_order(ball_names: list[str], hidden: set[str]) -> list[str]:
 
 
 class _TypeRow(QWidget):
+    title_lbl: QLabel
     icons_lbl: QLabel
 
 
@@ -113,24 +114,37 @@ class TypeEffectivenessPanel(QWidget):
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(4)
 
-        self.weak_row = self._create_row("Weak To:")
-        self.resist_row = self._create_row("Resists:")
-        self.immune_row = self._create_row("Immune:")
+        self.r_4x = self._create_row()
+        self.r_2x = self._create_row()
+        self.r_05x = self._create_row()
+        self.r_025x = self._create_row()
+        self.r_0x = self._create_row()
 
-        self._layout.addWidget(self.weak_row)
-        self._layout.addWidget(self.resist_row)
-        self._layout.addWidget(self.immune_row)
+        self._rows = [self.r_4x, self.r_2x, self.r_05x, self.r_025x, self.r_0x]
+        
+        # We need 4 dividers between the 5 rows
+        self._divs = [self._create_divider() for _ in range(4)]
+
+        for i, row in enumerate(self._rows):
+            self._layout.addWidget(row)
+            if i < len(self._divs):
+                self._layout.addWidget(self._divs[i])
+
         self._layout.addStretch(1)
 
-        self._rows = [self.weak_row, self.resist_row, self.immune_row]
+    def _create_divider(self) -> QFrame:
+        f = QFrame()
+        f.setFixedHeight(1)
+        f.setStyleSheet("background-color: #3a3b3e; margin-left: 59px;")
+        return f
 
-    def _create_row(self, title: str) -> _TypeRow:
+    def _create_row(self) -> _TypeRow:
         w = _TypeRow()
         lay = QHBoxLayout(w)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(4)
 
-        lbl = QLabel(title)
+        lbl = QLabel()
         lbl.setObjectName("SecondaryText")
         # Give it a fixed width so columns align visually
         lbl.setFixedWidth(55)
@@ -144,59 +158,77 @@ class TypeEffectivenessPanel(QWidget):
         icons_lbl.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         lay.addWidget(icons_lbl, 1)
 
+        w.title_lbl = lbl
         w.icons_lbl = icons_lbl
         return w
 
-    def update_types(self, enemy_types: tuple[str, ...]) -> None:
+    def update_types(self, enemy_types: tuple[str, ...], icon_height: int = 16) -> None:
         eff = calculate_effectiveness(enemy_types)
 
-        # Weak To: 4x then 2x
-        weak_groups = [("4x:", eff.get(4.0, [])), ("2x:", eff.get(2.0, []))]
-        # Resists: 0.25x then 0.5x
-        resist_groups = [("0.25x:", eff.get(0.25, [])), ("0.5x:", eff.get(0.5, []))]
-        # Immune: 0x
-        immune_groups = [("", eff.get(0.0, []))]
+        w4 = eff.get(4.0, [])
+        w2 = eff.get(2.0, [])
+        r05 = eff.get(0.5, [])
+        r025 = eff.get(0.25, [])
+        im = eff.get(0.0, [])
 
-        self._populate_row(self.weak_row, weak_groups)
-        self._populate_row(self.resist_row, resist_groups)
-        self._populate_row(self.immune_row, immune_groups)
+        # Assign titles dynamically to the first visible row in each group
+        self.r_4x.title_lbl.setText("Weak To:" if w4 else "")
+        self.r_2x.title_lbl.setText("Weak To:" if w2 and not w4 else "")
 
-    def _populate_row(self, row: _TypeRow, groups: list[tuple[str, list[str]]]) -> None:
-        html: list[str] = []
-        for prefix, types in groups:
-            if not types:
-                continue
+        self.r_05x.title_lbl.setText("Resists:" if r05 else "")
+        self.r_025x.title_lbl.setText("Resists:" if r025 and not r05 else "")
 
-            # If we already have HTML content, we are starting a new group, so insert a line break
-            if html:
-                html.append("<br>")
+        self.r_0x.title_lbl.setText("Immune:" if im else "")
 
-            # Add prefix if provided
-            if prefix:
-                html.append(
-                    f'<span style="color:#d0d0d0; font-size:11px; '
-                    f'font-weight:bold;">{prefix}</span> '
-                )
+        self._populate_row(self.r_4x, "4x:", w4, icon_height)
+        self._populate_row(self.r_2x, "2x:", w2, icon_height)
+        self._populate_row(self.r_05x, "0.5x:", r05, icon_height)
+        self._populate_row(self.r_025x, "0.25x:", r025, icon_height)
+        self._populate_row(self.r_0x, "", im, icon_height)
 
-            for t in types:
-                t = t.lower()
-                p = (
-                    Path(__file__).resolve().parent.parent.parent
-                    / "data"
-                    / "sprites"
-                    / "types"
-                    / f"{t}.png"
-                )
-                # Natively scale via HTML height attribute and align to text baseline
-                html.append(f'<img src="file:///{p.as_posix()}" height="14" align="middle"> ')
+        # Manage divider visibility: show divider if there is a visible row above AND below it
+        # We cannot use `r.isVisible()` here because `update_types` is called before
+        # the parent panel is made visible, which causes `isVisible()` to return False.
+        row_has_content = [bool(w4), bool(w2), bool(r05), bool(r025), bool(im)]
+        for i, div in enumerate(self._divs):
+            has_below = any(row_has_content[i+1:])
+            div.setVisible(row_has_content[i] and has_below)
 
-        final_html = "".join(html).strip()
-
-        if not final_html:
+    def _populate_row(self, row: _TypeRow, prefix: str, types: list[str], icon_height: int) -> None:
+        if not types:
             row.setVisible(False)
-        else:
-            row.setVisible(True)
-            row.icons_lbl.setText(final_html)
+            return
+
+        html: list[str] = ['<table width="100%" cellpadding="0" cellspacing="0">']
+        html.append('<tr>')
+        html.append('<td align="left" valign="top" width="40">')
+        if prefix:
+            html.append(
+                f'<span style="color:#d0d0d0; font-size:11px; '
+                f'font-weight:bold;">{prefix}</span>'
+            )
+        html.append('</td>')
+
+        html.append('<td align="right" valign="top">')
+        for i, t in enumerate(types):
+            if i > 0 and i % 3 == 0:
+                html.append('<br>')
+            t = t.lower()
+            p = (
+                Path(__file__).resolve().parent.parent.parent
+                / "data"
+                / "sprites"
+                / "types"
+                / f"{t}.png"
+            )
+            html.append(
+                f'&nbsp;<img src="{p.as_posix()}" height="{icon_height}" style="vertical-align: text-bottom;">'
+            )
+        html.append('</td></tr>')
+        html.append('</table>')
+
+        row.setVisible(True)
+        row.icons_lbl.setText("".join(html))
 
 
 class BattlePanel(BaseOverlay):
@@ -468,7 +500,7 @@ class BattlePanel(BaseOverlay):
             if getattr(self, "_last_enemy_types", None) != enemy_types:
                 self._last_enemy_types = enemy_types
                 self._last_order = None  # force layout invalidation
-            self._type_panel.update_types(enemy_types)
+            self._type_panel.update_types(enemy_types, self._px(16))
             self._type_panel.setVisible(True)
         else:
             self._last_enemy_types = None

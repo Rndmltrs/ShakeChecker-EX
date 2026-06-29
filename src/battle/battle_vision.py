@@ -217,7 +217,7 @@ class BattleVision:
                     ):
                         diff = cv2.absdiff(small, self._last_name_crop)
                         if np.mean(diff) > _NAME_DIFF_THRESHOLD:
-                            log.info(
+                            log.debug(
                                 "name-banner pixel diff %.1f > %.1f — possible swap",
                                 np.mean(diff),
                                 _NAME_DIFF_THRESHOLD,

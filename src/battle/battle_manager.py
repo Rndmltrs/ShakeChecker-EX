@@ -629,7 +629,6 @@ class BattleManager:
         during the swap to prevent a blank flash. A new OCR future is submitted
         and _on_ocr_result() will confirm or deny the swap when it resolves.
         """
-        log.info("name-banner pixel diff detected (TRACKING → SWAPPING), verifying with OCR…")
         self._state = _BattleState.SWAPPING
         # Cancel any in-flight future from a previous swap verification
         if self._name_future is not None:
