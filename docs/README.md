@@ -21,7 +21,7 @@
 
 <table>
   <tr>
-    <td><img src="./demonstration/media/duckveil-city(dex).png" alt="View 1" width="400"/></td>
+    <td><img src="[One](https://github.com/Rndmltrs/ShakeChecker-EX/blob/main/docs/Demonstration/media/duckveil-city(dex).png?raw=true)" alt="View 1" width="400"/></td>
     <td><img src="./demonstration/media/duck-wild.png" alt="View 2" width="400"/></td>
   </tr>
   <tr>
