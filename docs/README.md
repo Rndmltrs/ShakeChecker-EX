@@ -16,7 +16,6 @@
 * **Overlay & Z-Order Safety:** Implemented strict overlay handling to ensure UI panels remain correctly populated with relevant information without interfering with unrelated application windows.
 * **Developer-Centric Debugging:** Integrated one-click debug tools that export game window captures with color-coded region slices and OCR output for rapid, visual troubleshooting.
 * **Granular User Control:** Added modular settings, including panel auto-switching, caught-status toggles, and region overrides—decoupled from the UI logic for a cleaner experience.
-* **Location/Species Data:** Updates and parses the location and species data entirely from [PokeMMO Hub](https://github.com/PokeMMO-Tools/pokemmo-hub)
 
 ## Screenshots
 
