@@ -7,7 +7,6 @@
 ---
 
 ## Key Fork Improvements
-This fork transitions from a monolithic script to a high-performance, domain-driven application:
 
 * **Real-time Computer Vision:** Optimized use of OpenCV and RapidFuzz to perform high-speed, fuzzy-matched OCR and state detection on a live game feed—all without hooking into the game client.
 * **Asynchronous Architecture:** Replaced synchronous loops with a non-blocking, thread-pooled backend. Heavy OCR processing is offloaded to background threads, ensuring the UI remains fluid and responsive even during intensive tasks.
