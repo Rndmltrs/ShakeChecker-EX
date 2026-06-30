@@ -70,14 +70,18 @@ class RegionResolver:
     def resolve(self, hud_name: str) -> str | None:
         """Location key for the current HUD name, updating the tracked region when
         the name determines it. Returns None if unmatched or still ambiguous."""
-        regions = self._data.regions_for_name(hud_name)
-        if len(regions) == 1:
-            self.region = next(iter(regions))  # name pins the region -> adopt/switch
-        elif not regions:
-            # Check the fallback dictionary for encounter-less towns.
-            norm = _normalize(hud_name)
-            if norm in self._area_index:
-                self.region = self._area_index[norm].upper()
+        norm = _normalize(hud_name)
+        if not norm:
+            return None
+
+        if norm in self._area_index:
+            self.region = self._area_index[norm].upper()
+            if not self._data.is_exact(hud_name):
+                return None
+        else:
+            regions = self._data.regions_for_name(hud_name)
+            if len(regions) == 1:
+                self.region = next(iter(regions))  # name pins the region -> adopt/switch
 
         return self._data.match_location(hud_name, self.region)
 
