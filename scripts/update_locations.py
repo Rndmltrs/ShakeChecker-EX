@@ -1,13 +1,14 @@
+import contextlib
 import json
 import sys
 import urllib.error
 import urllib.request
-from collections import defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-from core.paths import ENCOUNTER_INDEX_PATH as OUT_PATH
+from core.paths import ENCOUNTER_INDEX_PATH as OUT_PATH  # noqa: E402
+
 URL_DATA = (
     "https://raw.githubusercontent.com/PokeMMO-Tools/pokemmo-hub/main/src/data/pokemmo/monster.json"
 )
@@ -53,18 +54,16 @@ def main() -> None:
             seasons = []
 
             if "(" in raw_location and ")" in raw_location:
-                base_name = raw_location[:raw_location.rfind("(")].strip()
-                conditions_str = raw_location[raw_location.rfind("(") + 1:raw_location.rfind(")")]
+                base_name = raw_location[: raw_location.rfind("(")].strip()
+                conditions_str = raw_location[raw_location.rfind("(") + 1 : raw_location.rfind(")")]
                 conds = [c.strip().upper() for c in conditions_str.split("/")]
-                
+
                 for c in conds:
                     if c in ["MORNING", "DAY", "NIGHT"]:
                         periods.append(c)
                     elif c.startswith("SEASON"):
-                        try:
+                        with contextlib.suppress(ValueError):
                             seasons.append(int(c.replace("SEASON", "")))
-                        except ValueError:
-                            pass
 
             if not periods:
                 periods = ["MORNING", "DAY", "NIGHT"]
@@ -73,14 +72,10 @@ def main() -> None:
 
             base_name_upper = base_name.upper()
             key = f"{region}_{base_name_upper.replace(' ', '_').replace('-', '_')}"
-            key = ''.join(c for c in key if c.isalnum() or c == '_').replace('__', '_')
+            key = "".join(c for c in key if c.isalnum() or c == "_").replace("__", "_")
 
             if key not in locations_dict:
-                locations_dict[key] = {
-                    "name": base_name_upper,
-                    "region": region,
-                    "encounters": []
-                }
+                locations_dict[key] = {"name": base_name_upper, "region": region, "encounters": []}
 
             locations_dict[key]["encounters"].append(
                 {
@@ -91,7 +86,7 @@ def main() -> None:
                     "min_level": loc.get("min_level"),
                     "max_level": loc.get("max_level"),
                     "periods": periods,
-                    "seasons": seasons
+                    "seasons": seasons,
                 }
             )
             encounter_count += 1
@@ -105,7 +100,9 @@ def main() -> None:
                 old_data = json.load(f)
                 if "locations" in old_data:
                     old_locations_count = len(old_data["locations"])
-                    old_encounters_count = sum(len(v["encounters"]) for v in old_data["locations"].values())
+                    old_encounters_count = sum(
+                        len(v["encounters"]) for v in old_data["locations"].values()
+                    )
                 else:
                     old_locations_count = len(old_data)
                     old_encounters_count = sum(len(v) for v in old_data.values())
@@ -122,7 +119,7 @@ def main() -> None:
         sorted_output[key] = {
             "name": loc_data["name"],
             "region": loc_data["region"],
-            "encounters": sorted_encounters
+            "encounters": sorted_encounters,
         }
 
     new_locations_count = len(sorted_output)
@@ -150,9 +147,9 @@ def main() -> None:
             "source": URL_DATA,
             "note": "PokeMMO-specific spawns; time/season parsed from the source 'time' field.",
             "locations": new_locations_count,
-            "encounters": encounter_count
+            "encounters": encounter_count,
         },
-        "locations": sorted_output
+        "locations": sorted_output,
     }
 
     with open(OUT_PATH, "w", encoding="utf-8") as f:

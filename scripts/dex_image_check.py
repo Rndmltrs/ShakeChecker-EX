@@ -25,7 +25,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from battle.battle_reader import load_calibration, read_battle, read_caught_icon  # noqa: E402
 from battle.name_reader import NameReader  # noqa: E402
 from core.game_time import Period, season_name  # noqa: E402
-from core.paths import LEGENDARIES_PATH, ENCOUNTER_INDEX_PATH  # noqa: E402
+from core.paths import ENCOUNTER_INDEX_PATH, LEGENDARIES_PATH  # noqa: E402
 from core.utils import parse_coord  # noqa: E402
 from dex.dex_session import DexSession  # noqa: E402
 from dex.dex_structures import CaughtStore  # noqa: E402

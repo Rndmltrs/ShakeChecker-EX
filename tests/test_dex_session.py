@@ -5,10 +5,10 @@ from pathlib import Path
 import pytest
 
 from core.game_time import Period
+from core.paths import AREA_INDEX_PATH, ENCOUNTER_INDEX_PATH, LEGENDARIES_PATH
 from dex.dex_session import DexSession
 from dex.dex_structures import CaughtStore
 from dex.dex_tracker import EncounterData
-from core.paths import AREA_INDEX_PATH, LEGENDARIES_PATH, ENCOUNTER_INDEX_PATH
 
 ROOT = Path(__file__).parent.parent
 DATA = ROOT / "data"

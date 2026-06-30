@@ -12,9 +12,8 @@ from dex.dex_tracker import (
 )
 
 ROOT = Path(__file__).parent.parent
-from core.paths import AREA_INDEX_PATH as AREA_INDEX
-from core.paths import LEGENDARIES_PATH as LEGENDARIES
-from core.paths import ENCOUNTER_PATH as ENCOUNTERS
+from core.paths import ENCOUNTER_INDEX_PATH as ENCOUNTERS  # noqa: E402
+from core.paths import LEGENDARIES_PATH as LEGENDARIES  # noqa: E402
 
 
 def enc(

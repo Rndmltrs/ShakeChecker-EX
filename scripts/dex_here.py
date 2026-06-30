@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from core.game_time import Period, current_period, current_season, season_name  # noqa: E402
-from core.paths import LEGENDARIES_PATH, ENCOUNTER_INDEX_PATH  # noqa: E402
+from core.paths import ENCOUNTER_INDEX_PATH, LEGENDARIES_PATH  # noqa: E402
 from dex.dex_tracker import EncounterData, display_order  # noqa: E402
 
 DATA = ROOT / "data"
