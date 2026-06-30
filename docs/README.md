@@ -22,11 +22,11 @@
 <table>
   <tr>
     <td><img src="./docs/demonstration/media/duckveil-city(dex).png" alt="View 1" width="400"/></td>
-    <td><img src="./docs/demonstration/media/duck-wild.png alt="View 2" width="400"/></td>
+    <td><img src="./docs/demonstration/media/duck-wild.png" alt="View 2" width="400"/></td>
   </tr>
   <tr>
     <td><img src="./docs/demonstration/media/duck-off(trainer).png" alt="View 3" width="400"/></td>
-    <td><img src="./docs/demonstration/media/duck-off(ocrlegend).png" width="400"/></td>
+    <td><img src="./docs/demonstration/media/duck-off(ocrlegend).png" alt="View 4" width="400"/></td>
   </tr>
 </table>
 
