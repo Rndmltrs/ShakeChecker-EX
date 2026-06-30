@@ -1,4 +1,4 @@
-# ShakeChecker — Project Fork
+# ShakeChecker EXpanded
 
 **This repository is a hard fork of the original [ghostpixxel/ShakeChecker](https://github.com/ghostpixxel/ShakeChecker) project.**
 
@@ -23,7 +23,7 @@ This guide covers how to set up the ShakeChecker application on your system. The
 
 ## 1. Initial Setup
 * Ensure you have **Python 3.11 or higher** installed on your computer.
-* Download the project folder and locate the `run_launcher.cmd` file.
+* Download from the releases section and unzip.
 * Double-click `run_launcher.cmd` to begin the automated setup.
 
 ## 2. Environment Configuration
