@@ -2,7 +2,7 @@
 
 **This repository is a hard fork of the original [ghostpixxel/ShakeChecker](https://github.com/ghostpixxel/ShakeChecker) project.**
 
-> All credit for the original concept, design, and research behind ShakeChecker belongs to ghostpixxel. This fork has been independently re-architected to address performance limitations and improve maintainability.
+> All credit for the original concept, design, and research behind ShakeChecker belongs to GhostPixxel. This fork has been independently re-architected to address performance limitations and improve maintainability.
 
 ---
 
@@ -55,7 +55,7 @@ This fork features a custom PowerShell bootstrap launcher (`launcher.ps1`) desig
 
 ## 🔗 Original Project
 
-**Author:** ghostpixxel  
+**Author:** GhostPixxel  
 **Repository:** [ghostpixxel/ShakeChecker](https://github.com/ghostpixxel/ShakeChecker)  
 **Website & FAQ:** [ShakeChecker Website](https://ghostpixxel.github.io/ShakeChecker/)  
 
