@@ -12,7 +12,6 @@
 * **Asynchronous Architecture:** Replaced synchronous loops with a non-blocking, thread-pooled backend. Heavy OCR processing is offloaded to background threads, ensuring the UI remains fluid and responsive even during intensive tasks.
 * **Architectural Decoupling:** Fully refactored into a modular package structure (`battle/`, `dex/`, `ui/`, `core/`) to improve feature isolation and long-term maintainability.
 * **Enhanced Battle Panel:** Displays pokemon element types and EV gains along with type advantages during trainer battles.
-* **Unified Battle State Machine**: Implements a robust lifecycle (SCANNING, IDENTIFYING, TRACKING, SWAPPING) to ensure UI stability during Pokémon identification and trainer-switch animations. 
 * **Improved Location Logic:** Dynamically parses empty locations with enhanced region detection and name resolution.
 * **Overlay & Z-Order Safety:** Implemented strict overlay handling to ensure UI panels remain correctly populated with relevant information without interfering with unrelated application windows.
 * **Developer-Centric Debugging:** Integrated one-click debug tools that export game window captures with color-coded region slices and OCR output for rapid, visual troubleshooting.
