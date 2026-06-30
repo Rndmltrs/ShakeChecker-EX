@@ -62,14 +62,14 @@ def main() -> None:
             pass
 
     entries = []
-    
+
     # Depending on the source, raw_data might be a list or a dict.
     data_list = raw_data.values() if isinstance(raw_data, dict) else raw_data
-    
+
     for data in data_list:
         if not isinstance(data, dict):
             continue
-            
+
         pid = data.get("id")
         if not pid:
             continue
@@ -88,7 +88,7 @@ def main() -> None:
 
         ev_yield = {}
         yields = data.get("yields", {})
-        
+
         # Fallback to old 'stats' format if 'yields' doesn't exist
         if not yields and "stats" in data:
             for stat in data.get("stats", []):
@@ -96,12 +96,18 @@ def main() -> None:
                 if effort > 0:
                     ev_yield[stat.get("stat_name")] = effort
         else:
-            if yields.get("ev_hp"): ev_yield["hp"] = yields["ev_hp"]
-            if yields.get("ev_attack"): ev_yield["attack"] = yields["ev_attack"]
-            if yields.get("ev_defense"): ev_yield["defense"] = yields["ev_defense"]
-            if yields.get("ev_sp_attack"): ev_yield["special-attack"] = yields["ev_sp_attack"]
-            if yields.get("ev_sp_defense"): ev_yield["special-defense"] = yields["ev_sp_defense"]
-            if yields.get("ev_speed"): ev_yield["speed"] = yields["ev_speed"]
+            if yields.get("ev_hp"):
+                ev_yield["hp"] = yields["ev_hp"]
+            if yields.get("ev_attack"):
+                ev_yield["attack"] = yields["ev_attack"]
+            if yields.get("ev_defense"):
+                ev_yield["defense"] = yields["ev_defense"]
+            if yields.get("ev_sp_attack"):
+                ev_yield["special-attack"] = yields["ev_sp_attack"]
+            if yields.get("ev_sp_defense"):
+                ev_yield["special-defense"] = yields["ev_sp_defense"]
+            if yields.get("ev_speed"):
+                ev_yield["speed"] = yields["ev_speed"]
 
         # Apply hardcoded overrides
         if pid in LEGENDARY_OVERRIDES:
