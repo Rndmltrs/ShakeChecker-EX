@@ -27,8 +27,8 @@ def main():
     # Charizard dex_id = 6
     panel.show_battle(
         dex_id=6,
-        name="Charizard",
-        level=50,
+        name="Testizard",
+        level=69,
         catch_rate=None,
         turn=1,
         probs={},
@@ -36,8 +36,9 @@ def main():
         hp_pct=100.0,
         alpha=False,
         is_trainer=True,
-        enemy_types=("POISON", "PSYCHIC"),
+        enemy_types=("STEEL", "ELECTRIC"),
         is_empty=False,
+        ev_yield={"special-attack": 3, "special-defense": 3},
     )
 
     panel.show()

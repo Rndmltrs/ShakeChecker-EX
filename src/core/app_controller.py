@@ -497,6 +497,21 @@ class AppController:
             self.dex_panel.show_here(view)
 
     def _on_dump_debug(self) -> None:
+        if hasattr(self, "settings_controller"):
+            self.settings_controller.close()
+            
+        # Wait a moment for the panel to disappear and the screen to repaint
+        import time
+        time.sleep(0.1)
+        
+        if hasattr(self, "capture") and self.capture is not None and self.hwnd is not None:
+            from core.window_capture import get_client_rect
+            client_rect = get_client_rect(self.hwnd)
+            if client_rect is not None:
+                fresh = self.capture.grab(client_rect)
+                if fresh is not None:
+                    self._last_frame = fresh
+                
         if hasattr(self, "_last_frame") and self._last_frame is not None:
             from core.debug_dump import trigger_debug_dump
 

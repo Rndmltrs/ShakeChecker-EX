@@ -203,6 +203,7 @@ def trigger_debug_dump(
     # 8. SAVE FULL FRAME (annotated copy)
     # ---------------------------------------------------------
     cv2.imwrite(str(debug_dir / f"full_frame_{timestamp}.png"), annotated)
+    cv2.imwrite(str(debug_dir / f"full_raw_{timestamp}.png"), frame)
 
     # ---------------------------------------------------------
     # 9. DUMP CROPS

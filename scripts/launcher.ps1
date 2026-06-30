@@ -26,7 +26,7 @@ function Show-Header {
     Write-Host "    ╚════██║██╔══██║██╔══██║██╔═██╗ ██╔══╝   " -ForegroundColor DarkGray
     Write-Host "    ███████║██║  ██║██║  ██║██║  ██╗███████╗ " -ForegroundColor White
     Write-Host "    ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝ " -ForegroundColor White
-    Write-Host "          C H E C K E R   V 1 . 2 . 0        " -ForegroundColor DarkGray
+    Write-Host "          C H E C K E R   V 1 . 2 . 0 EX       " -ForegroundColor DarkGray
     Write-Host ""
     if ($IsInstaller) {
         Write-Host "    [System Initialization & Installer]" -ForegroundColor Cyan
