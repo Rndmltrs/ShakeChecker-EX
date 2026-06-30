@@ -4,8 +4,12 @@ from pathlib import Path
 
 def main():
     root = Path(__file__).resolve().parent.parent
-    old_path = root / "data" / "species_core_old.json"
-    new_path = root / "data" / "species_core.json"
+    import sys
+
+    sys.path.insert(0, str(root / "src"))
+    from core.paths import SPECIES_INDEX_PATH as new_path
+
+    old_path = root / "data" / "species_index_old.json"
 
     if not old_path.exists():
         print(f"Error: {old_path.name} not found.")
@@ -15,10 +19,14 @@ def main():
         return
 
     with open(old_path, encoding="utf-8") as f:
-        old_data = {item["id"]: item for item in json.load(f)}
+        r = json.load(f)
+        species_list = r.get("species", r) if isinstance(r, dict) else r
+        old_data = {item["id"]: item for item in species_list}
 
     with open(new_path, encoding="utf-8") as f:
-        new_data = {item["id"]: item for item in json.load(f)}
+        r = json.load(f)
+        species_list = r.get("species", r) if isinstance(r, dict) else r
+        new_data = {item["id"]: item for item in species_list}
 
     added = []
     removed = []

@@ -1,4 +1,5 @@
-"""Parse the PokeMMO-Hub pokemon-data.json dump into ShakeChecker's normalized species_core.json."""
+"""Parse the PokeMMO-Hub pokemon-data.json dump into ShakeChecker's normalized
+species_index.json."""
 
 from __future__ import annotations
 
@@ -10,7 +11,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
-OUT_PATH = DATA / "species_core.json"
+from core.paths import SPECIES_INDEX_PATH as OUT_PATH  # noqa: E402
+
 URL_DATA = (
     "https://raw.githubusercontent.com/PokeMMO-Tools/pokemmo-hub/main/src/data/pokemmo/monster.json"
 )
@@ -54,7 +56,8 @@ def main() -> None:
     if OUT_PATH.exists():
         try:
             with open(OUT_PATH, encoding="utf-8") as f:
-                old_data = json.load(f)
+                raw = json.load(f)
+                old_data = raw.get("species", raw) if isinstance(raw, dict) else raw
                 old_count = len(old_data)
                 old_map = {e["id"]: e for e in old_data if "id" in e}
                 old_ids = set(old_map.keys())
@@ -160,8 +163,13 @@ def main() -> None:
             print("Aborted.")
             return
 
+    final_output = {
+        "meta": {"source": URL_DATA, "catch_rates": URL_RATES, "species": len(entries)},
+        "species": entries,
+    }
+
     with open(OUT_PATH, "w", encoding="utf-8") as f:
-        json.dump(entries, f, ensure_ascii=False, indent=1)
+        json.dump(final_output, f, ensure_ascii=False, indent=1)
 
     print(f"\nSuccessfully wrote {len(entries)} species to {OUT_PATH.name}")
 

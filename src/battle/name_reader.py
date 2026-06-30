@@ -2,7 +2,7 @@
 
 OCR output is never trusted directly: the level marker and trailing icons are
 stripped and the remainder is fuzzy-matched (rapidfuzz) against the English
-species list from species_core.json. The OCR engine is loaded lazily so this
+species list from species_index.json. The OCR engine is loaded lazily so this
 module (and the pure matching logic) imports cheaply for tests.
 """
 
@@ -18,7 +18,7 @@ from rapidfuzz import fuzz, process
 
 from battle.battle_reader import BarReading, NameCalibration
 from core.ocr_engine import run_ocr_no_det
-from core.paths import SPECIES_PATH
+from core.paths import SPECIES_INDEX_PATH
 
 # Cut the OCR string at the level marker ("Lv", "Lu", "Iv" misreads) so only
 # the name remains; everything after (level number, gender, caught ball) is noise.
@@ -96,7 +96,7 @@ def match_species_name(raw_text: str, names: list[str], min_score: float) -> str
 
 
 def lookup_species(name: str) -> dict:
-    entries = json.loads(SPECIES_PATH.read_text("utf-8"))
+    entries = json.loads(SPECIES_INDEX_PATH.read_text("utf-8"))
     for e in entries:
         if e["name"].lower() == name.lower():
             return e
@@ -105,11 +105,16 @@ def lookup_species(name: str) -> dict:
 
 class NameReader:
     """Crops the name region, OCRs it and resolves it to a species dict
-    ({id, name, catch_rate, ...} from species_core.json)."""
+    ({id, name, catch_rate, ...} from species_index.json)."""
 
-    def __init__(self, cal: NameCalibration, species_path: Path | str) -> None:
+    def __init__(self, cal: NameCalibration, species_index_path: Path | str) -> None:
         self._cal = cal
-        species = json.loads(Path(species_path).read_text("utf-8"))
+        raw_species = json.loads(Path(species_index_path).read_text("utf-8"))
+        species = (
+            raw_species.get("species", raw_species)
+            if isinstance(raw_species, dict)
+            else raw_species
+        )
         self._names = [s["name"] for s in species]
         self._by_name = {s["name"]: s for s in species}
 

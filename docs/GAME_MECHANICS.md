@@ -35,7 +35,7 @@ else:
 
 ShakeChecker relies on specific single-sources of truth to avoid drifting from game reality.
 
-- **`species_core.json`:** The single source of truth for base catch rates and typing. This is the only file the runtime reads for catch math.
+- **`species_index.json`:** The single source of truth for base catch rates and typing. This is the only file the runtime reads for catch math.
   - **Schema:** `{id, name, types, catch_rate, obtainable}` (where `id` is the National Dex order).
   - **Sources:** Catch rates, names, typings, and EVs originate from the [PokeMMO Hub](https://github.com/PokeMMO-Tools/pokemmo-hub).
   - **Unpublished Rates:** `catch_rate` is explicitly `null` for species with no published rate (e.g., roaming Latias, Latios, Mesprit, Cresselia). The overlay safely handles this by displaying `??`.
@@ -47,7 +47,7 @@ ShakeChecker relies on specific single-sources of truth to avoid drifting from g
 
 ### Data Update Path
 When game updates introduce new mechanics or spawn shifts, data must be refreshed by pulling the latest dumps from PokeMMO Hub:
-1. Execute `scripts/update_species.py` to pull the latest `monster.json` and `catchRates.json` to generate the normalized `species_core.json`.
+1. Execute `scripts/update_species.py` to pull the latest `monster.json` and `catchRates.json` to generate the normalized `species_index.json`.
 2. Execute `scripts/update_locations.py` to parse and invert the `monster.json` encounter data into a location-first hierarchy (`encounter_index.json`).
 
 ## 4. Vision & OCR Mechanics
@@ -56,7 +56,7 @@ The application reads the screen using OpenCV and RapidOCR, utilizing specific t
 
 - **HP% Tracking:** Crops the enemy HP bar region and uses color-masking for green/yellow/red hues to measure the filled width vs total width. This guarantees accurate readings regardless of the current color state.
 - **Status Detection:** PokeMMO status badges share the exact same shape and only differ by color. The app detects badge *presence* (pixel activity vs. empty baseline) and classifies it by dominant hue (e.g., yellow=PAR, purple=PSN).
-- **Name OCR:** Crops the name region, upscales 2-3x, runs OCR, and then fuzzy-matches against the known `species_core.json` list. It never trusts raw OCR output. 
+- **Name OCR:** Crops the name region, upscales 2-3x, runs OCR, and then fuzzy-matches against the known `species_index.json` list. It never trusts raw OCR output. 
   - *Language constraint:* All matching currently assumes the English client.
 - **Turn Counter:** Increments by 1 every time the move-selection UI disappears (indicating the player committed an action).
 

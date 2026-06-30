@@ -50,7 +50,9 @@ def main() -> None:
 
     cal = load_calibration(ROOT / "calibration.toml")
     data = EncounterData.load(ENCOUNTER_INDEX_PATH, LEGENDARIES_PATH)
-    name_reader = NameReader(cal.name, DATA / "species_core.json")
+    from core.paths import SPECIES_INDEX_PATH
+
+    name_reader = NameReader(cal.name, SPECIES_INDEX_PATH)
 
     # throwaway caught store so the check never writes real account data
     with tempfile.TemporaryDirectory() as tmp:

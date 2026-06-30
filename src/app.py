@@ -68,7 +68,7 @@ from core.config import (
     WAITING_POLL_S,
 )
 from core.paths import (
-    SPECIES_PATH,
+    SPECIES_INDEX_PATH,
     TEMPLATES_DIR,
     USERDATA,
 )
@@ -136,7 +136,7 @@ def analyze_image(
         raise SystemExit(f"cannot read image: {image_path!r}")
     status_rates = load_status_rates()
     balls = load_balls()
-    name_reader = None if species_override else NameReader(cal.name, SPECIES_PATH)
+    name_reader = None if species_override else NameReader(cal.name, SPECIES_INDEX_PATH)
     reading = read_battle(frame, cal)
     print(f"{image_path}\n  state: {reading.state.value}  (bars detected: {len(reading.bars)})")
     if reading.state is BattleState.MULTI:
@@ -258,7 +258,7 @@ def run(
     )
 
     ocr = OcrServices(
-        name_reader=None if species_override else NameReader(cal.name, SPECIES_PATH),
+        name_reader=None if species_override else NameReader(cal.name, SPECIES_INDEX_PATH),
         battle_text_reader=BattleTextReader(cal.battle_text, TEMPLATES_DIR),
         chat_reader=AsyncChatReader(cal.chat),
     )

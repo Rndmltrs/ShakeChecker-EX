@@ -283,7 +283,7 @@ manager = BattleManager(
 ShakeChecker reads from static data and writes to dynamic local storage.
 
 - **Static Data (Read-Only):**
-  - `data/species_core.json`: Base catch rates, typing, and names.
+  - `data/species_index.json`: Base catch rates, typing, and names.
   - `data/encounter_index.json`: Global map data linking locations to wild encounters.
   - `data/area_index.json`: Fuzzy-matching dictionary used to resolve raw OCR HUD text to canonical locations.
   - `calibration.toml`: X/Y coordinate ratios mapping exactly where UI elements sit on the screen.

@@ -85,7 +85,13 @@ def main() -> None:
     POKEMON_DIR.mkdir(parents=True, exist_ok=True)
     ITEMS_DIR.mkdir(parents=True, exist_ok=True)
 
-    species = json.loads((DATA / "species_core.json").read_text("utf-8"))
+    sys.path.insert(0, str(ROOT / "src"))
+    from core.paths import SPECIES_INDEX_PATH
+
+    raw_species = json.loads(SPECIES_INDEX_PATH.read_text("utf-8"))
+    species = (
+        raw_species.get("species", raw_species) if isinstance(raw_species, dict) else raw_species
+    )
     balls = json.loads((DATA / "balls.json").read_text("utf-8"))["balls"]
 
     print(f"Balls ({len(balls)}):")

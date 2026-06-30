@@ -25,9 +25,16 @@ from battle.name_reader import (
 
 ROOT = Path(__file__).parent.parent
 FIXTURES = ROOT / "tests" / "fixtures"
-SPECIES_PATH = ROOT / "data" / "species_core.json"
+from core.paths import SPECIES_INDEX_PATH as SPECIES_INDEX_PATH  # noqa: E402
+
 CAL = load_calibration(ROOT / "calibration.toml")
-NAMES = [s["name"] for s in json.loads(SPECIES_PATH.read_text("utf-8"))]
+raw_species = json.loads(SPECIES_INDEX_PATH.read_text("utf-8"))
+NAMES = [
+    s["name"]
+    for s in (
+        raw_species.get("species", raw_species) if isinstance(raw_species, dict) else raw_species
+    )
+]
 
 
 def test_clean_ocr_text_strips_level_and_icons():
@@ -110,7 +117,7 @@ def test_detect_gender_from_banner_icon(fixture, expected):
 
 @pytest.fixture(scope="module")
 def name_reader():
-    return NameReader(CAL.name, SPECIES_PATH)
+    return NameReader(CAL.name, SPECIES_INDEX_PATH)
 
 
 @pytest.mark.parametrize(("fixture", "expected"), _OCR_FIXTURES, ids=[f for f, _ in _OCR_FIXTURES])

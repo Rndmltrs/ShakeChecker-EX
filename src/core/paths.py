@@ -32,7 +32,7 @@ def resource_root() -> Path:
 # Bundled, read-only resources.
 DATA_DIR = resource_root() / "data"
 CALIBRATION_PATH = resource_root() / "calibration.toml"
-SPECIES_PATH = DATA_DIR / "species_core.json"
+SPECIES_INDEX_PATH = DATA_DIR / "species_index.json"
 TEMPLATES_DIR = DATA_DIR / "templates"
 ENCOUNTER_INDEX_PATH = DATA_DIR / "encounter_index.json"
 LEGENDARIES_PATH = DATA_DIR / "legendaries.json"
