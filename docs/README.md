@@ -11,8 +11,9 @@
 * **Real-time Computer Vision:** Optimized use of OpenCV and RapidFuzz to perform high-speed, fuzzy-matched OCR and state detection on a live game feed—all without hooking into the game client.
 * **Asynchronous Architecture:** Replaced synchronous loops with a non-blocking, thread-pooled backend. Heavy OCR processing is offloaded to background threads, ensuring the UI remains fluid and responsive even during intensive tasks.
 * **Architectural Decoupling:** Fully refactored into a modular package structure (`battle/`, `dex/`, `ui/`, `core/`) to improve feature isolation and long-term maintainability.
-* **Enhanced Battle Panel:** Displays pokemon element types, EV gains, and also type advantages during trainer battles.
-* **Improved Location Logic:** Dynamically parses locations without encounters with enhanced region detection and name resolution.
+* **Enhanced Battle Panel:** Displays pokemon element types and EV gains along with type advantages during trainer battles.
+* **Unified Battle State Machine**: Implements a robust lifecycle (SCANNING, IDENTIFYING, TRACKING, SWAPPING) to ensure UI stability during Pokémon identification and trainer-switch animations. 
+* **Improved Location Logic:** Dynamically parses empty locations with enhanced region detection and name resolution.
 * **Overlay & Z-Order Safety:** Implemented strict overlay handling to ensure UI panels remain correctly populated with relevant information without interfering with unrelated application windows.
 * **Developer-Centric Debugging:** Integrated one-click debug tools that export game window captures with color-coded region slices and OCR output for rapid, visual troubleshooting.
 * **Granular User Control:** Added modular settings, including panel auto-switching, caught-status toggles, and region overrides—decoupled from the UI logic for a cleaner experience.
