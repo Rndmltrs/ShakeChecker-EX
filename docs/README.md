@@ -56,13 +56,6 @@
   </tr>
 </table>
 
-<!-- Centered single image -->
-<div align="center">
-  <a href="https://github.com/Rndmltrs/ShakeChecker-EX/blob/main/docs/Demonstration/media/shake-launcher.png">
-    <img src="https://raw.githubusercontent.com/Rndmltrs/ShakeChecker-EX/main/docs/Demonstration/media/shake-launcher.png" alt="Shake Launcher" width="400"/>
-  </a>
-</div>
-
 # ShakeChecker Installation & Setup Guide
 
 This guide covers how to set up the ShakeChecker application on your system. The process is automated to ensure it runs safely without affecting your core system files or registry.
