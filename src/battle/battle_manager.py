@@ -254,12 +254,6 @@ class BattleManager:
                         and not scene.is_trainer
                         and not self.ctx.is_trainer  # also check the locked value
                     ):
-                        log.info(
-                            "overlay removed: %.1f > %.1f + %.1f",
-                            scene.ui_brightness,
-                            baseline,
-                            delta,
-                        )
                         self._last_seen_battle = 0.0
                         raw_in_battle = False
                         self._stable_in_battle = False
@@ -476,6 +470,7 @@ class BattleManager:
                 "hp_pct": None,
                 "alpha": False,
                 "is_trainer": False,
+                "ev_yield": {},
             }
 
         return update
@@ -545,6 +540,7 @@ class BattleManager:
                 "alpha": False,
                 "is_trainer": True,
                 "enemy_types": enemy_types,
+                "ev_yield": self.ctx.species.get("ev_yield", {}) if self.ctx.species else {},
             }
             turn_note = f"turn {self.turns.turns_completed + 1}"
             if self.turns.turns_asleep:
@@ -562,6 +558,7 @@ class BattleManager:
                 "hp_pct": hp_pct,
                 "alpha": False,
                 "is_trainer": is_trainer_ui,
+                "ev_yield": {},
             }
             line = f"{'?':12.12s} HP {hp_pct:5.1f}% [{status}]"
         else:
@@ -594,6 +591,7 @@ class BattleManager:
                 "alpha": bool(sp.get("alpha")),
                 "is_trainer": is_trainer_ui,
                 "enemy_types": tuple(sp.get("types", [])) if sp else (),
+                "ev_yield": sp.get("ev_yield", {}),
             }
 
         if line != self.last_line:

@@ -64,6 +64,15 @@ BASE_PCT_MINW = 48
 # probability colour thresholds (fraction 0-1) -> hex
 _RED, _YELLOW, _GREEN = "#ff5555", "#ffcc44", "#55dd66"
 
+_EV_NAMES = {
+    "hp": "HP",
+    "attack": "Atk",
+    "defense": "Def",
+    "special-attack": "SpA",
+    "special-defense": "SpD",
+    "speed": "Spe",
+}
+
 
 def subheader_text(catch_rate: int | None, turn: int) -> str:
     # catch_rate is None for species with no known rate (e.g. roaming Latias/
@@ -442,6 +451,7 @@ class BattlePanel(BaseOverlay):
         is_trainer: bool | None = None,
         enemy_types: tuple[str, ...] = (),
         is_empty: bool = False,
+        ev_yield: dict[str, int] | None = None,
     ) -> None:
         """Update the overlay for the current enemy and show it.
 
@@ -455,7 +465,7 @@ class BattlePanel(BaseOverlay):
         self._type_icon_lbl1.setVisible(False)
         self._type_icon_lbl2.setVisible(False)
         icon_h = self._px(14)
-        
+
         for i, t in enumerate(enemy_types):
             p = (
                 Path(__file__).resolve().parent.parent.parent
@@ -491,13 +501,23 @@ class BattlePanel(BaseOverlay):
             self._sprite.setVisible(True)
             self._hp.setVisible(True)
             self._empty_row.setVisible(False)
+
+            ev_str = ""
+            if ev_yield:
+                parts = [f"{v} {_EV_NAMES.get(k, k.title())}" for k, v in ev_yield.items()]
+                ev_str = ", ".join(parts)
+
             if is_trainer is True:
                 self._sub.setText("Trainer Battle")
             elif is_trainer is False:
                 self._sub.setText(subheader_text(catch_rate, turn))
             else:
                 self._sub.setText("Reading battle...")
-            self._hp.setText(f"HP: {hp_pct:.0f}%" if hp_pct is not None else "")
+
+            hp_text = f"HP: {hp_pct:.0f}%" if hp_pct is not None else ""
+            if ev_str:
+                hp_text += f"\nEVs: {ev_str}" if hp_text else f"EVs: {ev_str}"
+            self._hp.setText(hp_text)
             self._set_status(status)
 
         if is_trainer is True:

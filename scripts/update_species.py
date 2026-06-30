@@ -53,6 +53,12 @@ def main() -> None:
         catch_rate = data.get("capture_rate")
         obtainable = data.get("obtainable", False)
 
+        ev_yield = {}
+        for stat in data.get("stats", []):
+            effort = stat.get("effort", 0)
+            if effort > 0:
+                ev_yield[stat.get("stat_name")] = effort
+
         # Apply hardcoded overrides
         if pid in LEGENDARY_OVERRIDES:
             catch_rate = LEGENDARY_OVERRIDES[pid]
@@ -64,6 +70,7 @@ def main() -> None:
                 "types": types,
                 "catch_rate": catch_rate,
                 "obtainable": obtainable,
+                "ev_yield": ev_yield,
             }
         )
 
